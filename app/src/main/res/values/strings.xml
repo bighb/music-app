@@ -1,0 +1,13 @@
+<resources>
+    <string name="app_name">原生音乐</string>
+    <string name="tab_discover">发现与搜索</string>
+    <string name="tab_favorites">我的收藏</string>
+    <string name="search_hint">搜索歌曲名、抖音热歌或粘贴分享链接...</string>
+    <string name="parse_link">解析链接</string>
+    <string name="clipboard_detected">检测到抖音分享链接，是否立即解析？</string>
+    <string name="action_parse">立即解析</string>
+    <string name="action_dismiss">忽略</string>
+    <string name="empty_favorites">暂无收藏歌曲，去搜索添加吧~</string>
+    <string name="play_all">播放全部</string>
+    <string name="clear_favorites">清空收藏</string>
+</resources>
