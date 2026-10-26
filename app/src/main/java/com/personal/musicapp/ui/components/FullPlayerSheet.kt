@@ -233,6 +233,29 @@ fun FullPlayerDialog(
                         overflow = TextOverflow.Ellipsis,
                         textAlign = TextAlign.Center
                     )
+
+                    if (playerState.playerError != null) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.8f),
+                            modifier = Modifier.padding(horizontal = 16.dp)
+                        ) {
+                            Text(
+                                text = playerState.playerError!!,
+                                style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.error),
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    } else if (playerState.isBuffering) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "正在缓冲解析中...",
+                            style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.primary),
+                            textAlign = TextAlign.Center
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))

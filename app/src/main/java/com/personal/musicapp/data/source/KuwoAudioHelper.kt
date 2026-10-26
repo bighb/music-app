@@ -15,63 +15,107 @@ object KuwoAudioHelper {
     private const val TAG = "KuwoAudioHelper"
 
     private val client = OkHttpClient.Builder()
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(10, TimeUnit.SECONDS)
+        .connectTimeout(4, TimeUnit.SECONDS)
+        .readTimeout(4, TimeUnit.SECONDS)
         .build()
 
-    suspend fun getPlayableUrl(songName: String, artist: String = ""): String? = withContext(Dispatchers.IO) {
-        val query = if (artist.isNotEmpty() && artist != "群星" && artist != "未知歌曲") {
-            "$songName $artist"
-        } else {
-            songName
-        }.trim()
+    private fun cleanHtmlEntities(str: String): String {
+        return str
+            .replace("&nbsp;", " ")
+            .replace("&amp;", "&")
+            .replace("&quot;", "\"")
+            .replace("&#39;", "'")
+            .replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .trim()
+    }
 
+    suspend fun getPlayableUrl(songName: String, artist: String = ""): String? = withContext(Dispatchers.IO) {
+        val cleanArtist = if (artist.isNotEmpty() && artist != "群星" && artist != "未知歌曲") {
+            artist.split("/", "、", ",", "&").first().trim()
+        } else ""
+
+        val rawTitle = cleanHtmlEntities(songName)
+        val queries = mutableListOf<String>()
+
+        if (cleanArtist.isNotEmpty()) {
+            queries.add("$rawTitle $cleanArtist")
+        }
+        queries.add(rawTitle)
+
+        // Also add stripped title without parentheses: "晴天 (Live)" -> "晴天"
+        val strippedTitle = rawTitle.replace(Regex("[\\(\\[【（].*?[\\)\\]】）]"), "").trim()
+        if (strippedTitle.isNotEmpty() && strippedTitle != rawTitle) {
+            if (cleanArtist.isNotEmpty()) {
+                queries.add("$strippedTitle $cleanArtist")
+            }
+            queries.add(strippedTitle)
+        }
+
+        for (q in queries) {
+            val url = queryKuwoStream(q)
+            if (!url.isNullOrEmpty()) {
+                return@withContext url
+            }
+        }
+
+        return@withContext null
+    }
+
+    private fun queryKuwoStream(query: String): String? {
         try {
-            val encoded = URLEncoder.encode(query, "UTF-8")
-            val searchUrl = "http://search.kuwo.cn/r.s?all=$encoded&ft=music&itemset=web_2013&client=kt&pn=0&rn=3&rformat=json&encoding=utf8"
+            val encoded = URLEncoder.encode(query.trim(), "UTF-8")
+            val searchUrl = "http://search.kuwo.cn/r.s?all=$encoded&ft=music&itemset=web_2013&client=kt&pn=0&rn=5&rformat=json&encoding=utf8"
 
             val req = Request.Builder()
                 .url(searchUrl)
                 .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
                 .build()
 
-            val songRid = client.newCall(req).execute().use { resp ->
-                if (!resp.isSuccessful) return@use null
-                val body = resp.body?.string() ?: return@use null
-                // Kuwo returns single-quoted JSON-like string, standardise it
+            val rids = client.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return@use emptyList<String>()
+                val body = resp.body?.string() ?: return@use emptyList<String>()
                 val jsonStr = body.replace('\'', '"')
                 val root = JsonParser.parseString(jsonStr).asJsonObject
-                val abslist = root.getAsJsonArray("abslist")
-                if (abslist != null && abslist.size() > 0) {
-                    val first = abslist[0].asJsonObject
-                    first.get("DC_TARGETID")?.asString
-                        ?: first.get("MUSICRID")?.asString?.replace("MUSIC_", "")
-                } else null
-            } ?: return@withContext null
+                val abslist = root.getAsJsonArray("abslist") ?: return@use emptyList<String>()
 
-            // Get direct MP3 URL
-            val convertUrl = "http://antiserver.kuwo.cn/anti.s?type=convert_url&rid=$songRid&format=mp3&response=url"
-            val convertReq = Request.Builder().url(convertUrl).build()
+                val idList = mutableListOf<String>()
+                for (i in 0 until minOf(3, abslist.size())) {
+                    val item = abslist[i].asJsonObject
+                    val rid = item.get("DC_TARGETID")?.asString
+                        ?: item.get("MUSICRID")?.asString?.replace("MUSIC_", "")
+                    if (!rid.isNullOrEmpty()) {
+                        idList.add(rid)
+                    }
+                }
+                idList
+            }
 
-            client.newCall(convertReq).execute().use { resp ->
-                if (!resp.isSuccessful) return@withContext null
-                val streamUrl = resp.body?.string()?.trim()
-                if (!streamUrl.isNullOrEmpty() && streamUrl.startsWith("http")) {
-                    Log.d(TAG, "Successfully resolved Kuwo stream for '$query': $streamUrl")
-                    return@withContext streamUrl
+            for (songRid in rids) {
+                val convertUrl = "http://antiserver.kuwo.cn/anti.s?type=convert_url&rid=$songRid&format=mp3&response=url"
+                val convertReq = Request.Builder().url(convertUrl).build()
+
+                client.newCall(convertReq).execute().use { resp ->
+                    if (resp.isSuccessful) {
+                        val streamUrl = resp.body?.string()?.trim()
+                        if (!streamUrl.isNullOrEmpty() && streamUrl.startsWith("http")) {
+                            Log.d(TAG, "Successfully resolved Kuwo stream for '$query' (rid=$songRid): $streamUrl")
+                            return streamUrl
+                        }
+                    }
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Kuwo fallback error for $query", e)
+            Log.e(TAG, "Kuwo query error for $query", e)
         }
-        return@withContext null
+        return null
     }
 
     suspend fun searchSongs(query: String): List<Song> = withContext(Dispatchers.IO) {
         val results = mutableListOf<Song>()
         try {
             val encoded = URLEncoder.encode(query.trim(), "UTF-8")
-            val searchUrl = "http://search.kuwo.cn/r.s?all=$encoded&ft=music&itemset=web_2013&client=kt&pn=0&rn=15&rformat=json&encoding=utf8"
+            val searchUrl = "http://search.kuwo.cn/r.s?all=$encoded&ft=music&itemset=web_2013&client=kt&pn=0&rn=20&rformat=json&encoding=utf8"
 
             val req = Request.Builder()
                 .url(searchUrl)
@@ -87,17 +131,23 @@ object KuwoAudioHelper {
 
                 for (item in abslist) {
                     val obj = item.asJsonObject
-                    val name = obj.get("SONGNAME")?.asString ?: continue
-                    val artist = obj.get("ARTIST")?.asString ?: "群星"
+                    val rawName = obj.get("SONGNAME")?.asString ?: continue
+                    val rawArtist = obj.get("ARTIST")?.asString ?: "群星"
                     val duration = (obj.get("DURATION")?.asLong ?: 0L) * 1000L
                     val rid = obj.get("DC_TARGETID")?.asString
                         ?: obj.get("MUSICRID")?.asString?.replace("MUSIC_", "")
                         ?: continue
 
+                    val name = cleanHtmlEntities(rawName)
+                    val artist = cleanHtmlEntities(rawArtist)
+
                     var cover = ""
                     val webPic = obj.get("web_albumpic_short")?.asString
+                    val artistPic = obj.get("web_artistpic_short")?.asString
                     if (!webPic.isNullOrEmpty()) {
                         cover = "https://img4.kuwo.cn/star/albumcover/$webPic"
+                    } else if (!artistPic.isNullOrEmpty()) {
+                        cover = "https://img4.kuwo.cn/star/starheads/$artistPic"
                     }
 
                     results.add(

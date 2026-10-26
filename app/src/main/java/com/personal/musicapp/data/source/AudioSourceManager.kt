@@ -8,12 +8,14 @@ import kotlinx.coroutines.coroutineScope
 class AudioSourceManager {
 
     private val netMusic = NetMusicAudioSource()
+    private val kuwoMusic = KuwoAudioSource()
     private val douyin = DouyinAudioSource(fallbackMusicSource = netMusic)
 
-    private val sources: List<AudioSource> = listOf(douyin, netMusic)
+    private val linkSources: List<AudioSource> = listOf(douyin)
+    private val searchSources: List<AudioSource> = listOf(kuwoMusic, netMusic)
 
     fun findSourceForLink(text: String): AudioSource? {
-        return sources.firstOrNull { it.canHandleLink(text) }
+        return linkSources.firstOrNull { it.canHandleLink(text) }
     }
 
     suspend fun parseShareLink(text: String): Song? {
@@ -21,15 +23,31 @@ class AudioSourceManager {
     }
 
     suspend fun search(query: String): List<Song> = coroutineScope {
-        val deferredList = sources.map { src ->
-            async {
-                try {
-                    src.search(query)
-                } catch (e: Exception) {
-                    emptyList()
-                }
+        val deferredKuwo = async {
+            try {
+                kuwoMusic.search(query)
+            } catch (e: Exception) {
+                emptyList()
             }
         }
-        deferredList.awaitAll().flatten()
+        val deferredNet = async {
+            try {
+                netMusic.search(query)
+            } catch (e: Exception) {
+                emptyList()
+            }
+        }
+
+        val kuwoList = deferredKuwo.await()
+        val netList = deferredNet.await()
+
+        // Interleave Kuwo (high-availability free streams) and NetMusic (rich library)
+        val combined = mutableListOf<Song>()
+        val maxLen = maxOf(kuwoList.size, netList.size)
+        for (i in 0 until maxLen) {
+            if (i < kuwoList.size) combined.add(kuwoList[i])
+            if (i < netList.size) combined.add(netList[i])
+        }
+        combined
     }
 }

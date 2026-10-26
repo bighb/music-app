@@ -14,6 +14,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import com.personal.musicapp.data.model.Song
 import com.personal.musicapp.data.source.KuwoAudioHelper
+import com.personal.musicapp.util.awaitResponse
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -40,8 +41,8 @@ class MusicPlayerManager(private val context: Context) {
     private val redirectResolverClient = OkHttpClient.Builder()
         .followRedirects(false)
         .followSslRedirects(false)
-        .connectTimeout(8, TimeUnit.SECONDS)
-        .readTimeout(8, TimeUnit.SECONDS)
+        .connectTimeout(3500, TimeUnit.MILLISECONDS)
+        .readTimeout(3500, TimeUnit.MILLISECONDS)
         .build()
 
     private val httpDataSourceFactory = DefaultHttpDataSource.Factory()
@@ -94,6 +95,10 @@ class MusicPlayerManager(private val context: Context) {
         override fun onPlayerError(error: PlaybackException) {
             val errorMsg = "播放出错: ${error.errorCodeName} (${error.errorCode}) - ${error.localizedMessage ?: "未知解码或网络问题"}"
             Log.e(tag, "ExoPlayer Error: $errorMsg", error)
+            try {
+                exoPlayer.stop()
+                exoPlayer.clearMediaItems()
+            } catch (_: Exception) {}
             _playerState.update {
                 it.copy(
                     isPlaying = false,
@@ -140,7 +145,7 @@ class MusicPlayerManager(private val context: Context) {
         progressJob = null
     }
 
-    fun playSong(song: Song, playlist: List<Song> = listOf(song)) {
+    fun playSong(song: Song, playlist: List<Song> = listOf(song), autoSkipOnFailure: Boolean = true) {
         val index = playlist.indexOfFirst { it.id == song.id }.let { if (it == -1) 0 else it }
         _playerState.update {
             it.copy(
@@ -155,11 +160,70 @@ class MusicPlayerManager(private val context: Context) {
         }
 
         prepareJob?.cancel()
+        try {
+            exoPlayer.stop()
+            exoPlayer.clearMediaItems()
+        } catch (_: Exception) {}
+
         prepareJob = scope.launch {
-            // Resolve direct playable stream URL (with 404 protection & Kuwo fallback)
-            val directPlayUrl = resolveMediaDirectUrl(song)
-            if (directPlayUrl.isNullOrEmpty()) {
-                val errorMsg = "该歌曲受版权或VIP限制，暂无免费可用音源"
+            try {
+                // Resolve direct playable stream URL (with 404 protection & Kuwo fallback)
+                val directPlayUrl = resolveMediaDirectUrl(song)
+                if (directPlayUrl.isNullOrEmpty()) {
+                    val errorMsg = "《${song.title}》暂无可用音源（受版权保护）"
+                    Log.w(tag, errorMsg)
+                    _playerState.update {
+                        it.copy(
+                            isBuffering = false,
+                            isPlaying = false,
+                            playerError = errorMsg
+                        )
+                    }
+                    if (autoSkipOnFailure && playlist.size > 1) {
+                        delay(1500)
+                        skipNext()
+                    }
+                    return@launch
+                }
+
+                Log.d(tag, "Playing ${song.title} from: $directPlayUrl")
+
+                val playUri = when {
+                    song.localAudioPath != null && File(song.localAudioPath).exists() -> {
+                        Uri.fromFile(File(song.localAudioPath))
+                    }
+                    else -> Uri.parse(directPlayUrl)
+                }
+
+                val artworkUri = when {
+                    song.localCoverPath != null && File(song.localCoverPath).exists() -> {
+                        Uri.fromFile(File(song.localCoverPath))
+                    }
+                    song.coverUrl.isNotEmpty() -> Uri.parse(song.coverUrl)
+                    else -> null
+                }
+
+                val mediaMetadata = MediaMetadata.Builder()
+                    .setTitle(song.title)
+                    .setArtist(song.artist)
+                    .setArtworkUri(artworkUri)
+                    .build()
+
+                val mediaItem = MediaItem.Builder()
+                    .setMediaId(song.id)
+                    .setUri(playUri)
+                    .setMediaMetadata(mediaMetadata)
+                    .build()
+
+                exoPlayer.setMediaItem(mediaItem)
+                exoPlayer.prepare()
+                exoPlayer.play()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // Standard coroutine cancellation when user selects another song
+                throw e
+            } catch (e: Throwable) {
+                Log.e(tag, "Failed to play ${song.title}", e)
+                val errorMsg = "《${song.title}》播放异常: ${e.localizedMessage ?: "网络或解码错误"}"
                 _playerState.update {
                     it.copy(
                         isBuffering = false,
@@ -167,41 +231,11 @@ class MusicPlayerManager(private val context: Context) {
                         playerError = errorMsg
                     )
                 }
-                return@launch
-            }
-
-            Log.d(tag, "Playing ${song.title} from: $directPlayUrl")
-
-            val playUri = when {
-                song.localAudioPath != null && File(song.localAudioPath).exists() -> {
-                    Uri.fromFile(File(song.localAudioPath))
+                if (autoSkipOnFailure && playlist.size > 1) {
+                    delay(1500)
+                    skipNext()
                 }
-                else -> Uri.parse(directPlayUrl)
             }
-
-            val artworkUri = when {
-                song.localCoverPath != null && File(song.localCoverPath).exists() -> {
-                    Uri.fromFile(File(song.localCoverPath))
-                }
-                song.coverUrl.isNotEmpty() -> Uri.parse(song.coverUrl)
-                else -> null
-            }
-
-            val mediaMetadata = MediaMetadata.Builder()
-                .setTitle(song.title)
-                .setArtist(song.artist)
-                .setArtworkUri(artworkUri)
-                .build()
-
-            val mediaItem = MediaItem.Builder()
-                .setMediaId(song.id)
-                .setUri(playUri)
-                .setMediaMetadata(mediaMetadata)
-                .build()
-
-            exoPlayer.setMediaItem(mediaItem)
-            exoPlayer.prepare()
-            exoPlayer.play()
         }
     }
 
@@ -215,7 +249,7 @@ class MusicPlayerManager(private val context: Context) {
             val convertUrl = "http://antiserver.kuwo.cn/anti.s?type=convert_url&rid=$rid&format=mp3&response=url"
             try {
                 val req = Request.Builder().url(convertUrl).build()
-                redirectResolverClient.newCall(req).execute().use { resp ->
+                redirectResolverClient.newCall(req).awaitResponse().use { resp ->
                     val streamUrl = resp.body?.string()?.trim()
                     if (!streamUrl.isNullOrEmpty() && streamUrl.startsWith("http")) {
                         return@withContext streamUrl
@@ -224,6 +258,13 @@ class MusicPlayerManager(private val context: Context) {
             } catch (e: Exception) {
                 Log.e(tag, "Kuwo convert error for $rid", e)
             }
+
+            // Fallback: search Kuwo by title if direct rid fails
+            val fallbackUrl = KuwoAudioHelper.getPlayableUrl(song.title, song.artist)
+            if (!fallbackUrl.isNullOrEmpty()) {
+                return@withContext fallbackUrl
+            }
+            return@withContext null
         }
 
         // 2. Netease outer URL
@@ -234,7 +275,7 @@ class MusicPlayerManager(private val context: Context) {
                     .header("User-Agent", "Mozilla/5.0")
                     .build()
 
-                redirectResolverClient.newCall(req).execute().use { resp ->
+                redirectResolverClient.newCall(req).awaitResponse().use { resp ->
                     val location = resp.header("Location")
                     if (!location.isNullOrEmpty()) {
                         // Check if Netease redirected to 404 (VIP or copyrighted)

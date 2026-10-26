@@ -41,12 +41,14 @@ fun SongListItem(
     isFavorited: Boolean,
     onClick: () -> Unit,
     onToggleFavorite: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isBuffering: Boolean = false,
+    hasError: Boolean = false
 ) {
-    val containerBg = if (isPlaying) {
-        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
-    } else {
-        Color.Transparent
+    val containerBg = when {
+        hasError -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f)
+        isPlaying -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
+        else -> Color.Transparent
     }
 
     Row(
@@ -86,48 +88,91 @@ fun SongListItem(
 
         // Title and Artist
         Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = song.title,
-                style = MaterialTheme.typography.bodyLarge.copy(
-                    fontWeight = if (isPlaying) FontWeight.Bold else FontWeight.Medium,
-                    color = if (isPlaying) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                ),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(top = 4.dp)
-            ) {
-                if (song.localAudioPath != null) {
-                    Icon(
-                        imageVector = Icons.Outlined.CloudDone,
-                        contentDescription = "已离线",
-                        modifier = Modifier.size(14.dp),
-                        tint = MaterialTheme.colorScheme.tertiary
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                }
-
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = song.artist,
-                    style = MaterialTheme.typography.bodySmall.copy(
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    text = song.title,
+                    style = MaterialTheme.typography.bodyLarge.copy(
+                        fontWeight = if (isPlaying) FontWeight.Bold else FontWeight.Medium,
+                        color = when {
+                            hasError -> MaterialTheme.colorScheme.error
+                            isPlaying -> MaterialTheme.colorScheme.primary
+                            else -> MaterialTheme.colorScheme.onSurface
+                        }
                     ),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false)
                 )
 
-                if (song.durationMs > 0) {
+                if (song.source.isNotEmpty()) {
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                            .padding(horizontal = 4.dp, vertical = 1.dp)
+                    ) {
+                        Text(
+                            text = song.source,
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontSize = 9.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        )
+                    }
+                }
+            }
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(top = 4.dp)
+            ) {
+                if (hasError) {
                     Text(
-                        text = " • " + FormatUtils.formatDuration(song.durationMs),
+                        text = "暂无可用音源",
                         style = MaterialTheme.typography.bodySmall.copy(
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                            color = MaterialTheme.colorScheme.error,
                             fontSize = 11.sp
                         )
                     )
+                } else if (isPlaying && isBuffering) {
+                    Text(
+                        text = "正在缓冲解析...",
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            color = MaterialTheme.colorScheme.primary,
+                            fontSize = 11.sp
+                        )
+                    )
+                } else {
+                    if (song.localAudioPath != null) {
+                        Icon(
+                            imageVector = Icons.Outlined.CloudDone,
+                            contentDescription = "已离线",
+                            modifier = Modifier.size(14.dp),
+                            tint = MaterialTheme.colorScheme.tertiary
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                    }
+
+                    Text(
+                        text = song.artist,
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+
+                    if (song.durationMs > 0) {
+                        Text(
+                            text = " • " + FormatUtils.formatDuration(song.durationMs),
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                fontSize = 11.sp
+                            )
+                        )
+                    }
                 }
             }
         }

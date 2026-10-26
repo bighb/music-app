@@ -155,12 +155,17 @@ fun FavoritesScreen(
                 contentPadding = PaddingValues(bottom = 90.dp)
             ) {
                 items(favoritesList, key = { it.id }) { song ->
-                    val isPlaying = playerState.currentSong?.id == song.id
+                    val isCurrent = playerState.currentSong?.id == song.id
+                    val isPlaying = isCurrent && playerState.isPlaying
+                    val isBuffering = isCurrent && playerState.isBuffering
+                    val hasError = isCurrent && playerState.playerError != null
 
                     SongListItem(
                         song = song,
-                        isPlaying = isPlaying,
+                        isPlaying = isCurrent,
                         isFavorited = true,
+                        isBuffering = isBuffering,
+                        hasError = hasError,
                         onClick = { onSongClick(song) },
                         onToggleFavorite = { onToggleFavorite(song) }
                     )

@@ -1,10 +1,12 @@
 package com.personal.musicapp
 
+import com.personal.musicapp.data.source.AudioSourceManager
 import com.personal.musicapp.data.source.KuwoAudioHelper
 import com.personal.musicapp.data.source.NetMusicAudioSource
 import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -13,8 +15,8 @@ class AudioSourceTest {
 
     @Test
     fun testKuwoFallbackForRestrictedSong() = runBlocking {
-        // Song that is 404 on Netease
-        val url = KuwoAudioHelper.getPlayableUrl("玉芬啊玉芬你让彪哥好伤心")
+        // Song that is restricted on Netease
+        val url = KuwoAudioHelper.getPlayableUrl("晴天", "周杰伦")
         println("Kuwo Playable URL: $url")
         assertNotNull("Kuwo fallback should resolve playable stream", url)
         assertTrue("Stream should be http/https", url!!.startsWith("http"))
@@ -27,6 +29,25 @@ class AudioSourceTest {
             assertTrue("Stream must return 200 OK", resp.isSuccessful)
             val contentType = resp.header("Content-Type") ?: ""
             assertTrue("Content-Type must be audio", contentType.contains("audio") || contentType.contains("mpeg") || contentType.contains("octet-stream"))
+        }
+    }
+
+    @Test
+    fun testAudioSourceManagerAggregatedSearch() = runBlocking {
+        val manager = AudioSourceManager()
+        val results = manager.search("晴天")
+
+        println("=== Aggregated Search Results for '晴天' ===")
+        println("Total songs returned: ${results.size}")
+        assertTrue("Search should return results", results.isNotEmpty())
+
+        val sourcesFound = results.map { it.source }.toSet()
+        println("Sources present in results: $sourcesFound")
+        assertTrue("Results should contain Kuwo source", sourcesFound.contains("酷我"))
+
+        for (song in results.take(5)) {
+            println("[${song.source}] ${song.title} - ${song.artist} | url: ${song.audioUrl}")
+            assertFalse("Song title should not contain &nbsp;", song.title.contains("&nbsp;"))
         }
     }
 

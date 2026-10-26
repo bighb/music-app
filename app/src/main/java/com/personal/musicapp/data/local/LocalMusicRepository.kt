@@ -99,12 +99,15 @@ class LocalMusicRepository(private val context: Context) {
     private suspend fun cacheSongLocally(song: Song) = withContext(Dispatchers.IO) {
         try {
             var updatedSong = song
-            // 1. Download audio file
+            // 1. Download audio file ONLY if not already downloaded
             if (song.localAudioPath == null || !File(song.localAudioPath).exists()) {
-                val audioFile = File(audioDir, "${cleanFileName(song.id)}.mp3")
-                val downloadSuccess = downloadFile(song.audioUrl, audioFile)
-                if (downloadSuccess) {
-                    updatedSong = updatedSong.copy(localAudioPath = audioFile.absolutePath)
+                val directAudioUrl = resolveDownloadUrl(song)
+                if (!directAudioUrl.isNullOrEmpty() && directAudioUrl.startsWith("http")) {
+                    val audioFile = File(audioDir, "${cleanFileName(song.id)}.mp3")
+                    val downloadSuccess = downloadFile(directAudioUrl, audioFile)
+                    if (downloadSuccess && audioFile.exists() && audioFile.length() > 5000) {
+                        updatedSong = updatedSong.copy(localAudioPath = audioFile.absolutePath)
+                    }
                 }
             }
 
@@ -112,7 +115,7 @@ class LocalMusicRepository(private val context: Context) {
             if (!song.coverUrl.isNullOrEmpty() && (song.localCoverPath == null || !File(song.localCoverPath).exists())) {
                 val coverFile = File(coverDir, "${cleanFileName(song.id)}.jpg")
                 val downloadSuccess = downloadFile(song.coverUrl, coverFile)
-                if (downloadSuccess) {
+                if (downloadSuccess && coverFile.exists() && coverFile.length() > 500) {
                     updatedSong = updatedSong.copy(localCoverPath = coverFile.absolutePath)
                 }
             }
@@ -130,16 +133,47 @@ class LocalMusicRepository(private val context: Context) {
         }
     }
 
+    private suspend fun resolveDownloadUrl(song: Song): String? {
+        val raw = song.audioUrl
+        if (raw.startsWith("kuwo://")) {
+            val rid = raw.removePrefix("kuwo://")
+            val convertUrl = "http://antiserver.kuwo.cn/anti.s?type=convert_url&rid=$rid&format=mp3&response=url"
+            try {
+                val req = Request.Builder().url(convertUrl).build()
+                client.newCall(req).execute().use { resp ->
+                    val streamUrl = resp.body?.string()?.trim()
+                    if (!streamUrl.isNullOrEmpty() && streamUrl.startsWith("http")) {
+                        return streamUrl
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+            return com.personal.musicapp.data.source.KuwoAudioHelper.getPlayableUrl(song.title, song.artist)
+        }
+
+        if (raw.contains("music.163.com")) {
+            val fallback = com.personal.musicapp.data.source.KuwoAudioHelper.getPlayableUrl(song.title, song.artist)
+            if (!fallback.isNullOrEmpty()) return fallback
+        }
+
+        return raw
+    }
+
     private fun downloadFile(url: String, destFile: File): Boolean {
         return try {
             val request = Request.Builder()
                 .url(url)
-                .header("User-Agent", "Mozilla/5.0")
+                .header("User-Agent", "Mozilla/5.0 (Linux; Android 14)")
                 .build()
 
             client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) return false
                 val body = response.body ?: return false
+                val contentType = response.header("Content-Type") ?: ""
+                if (contentType.contains("text/html")) return false
+
+                destFile.parentFile?.mkdirs()
                 FileOutputStream(destFile).use { fos ->
                     body.byteStream().copyTo(fos)
                 }

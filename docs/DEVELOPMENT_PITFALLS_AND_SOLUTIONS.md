@@ -10,6 +10,10 @@
 3. [踩坑三：音频容器解析失败 ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED (3003)](#3-踩坑三音频容器解析失败-error_code_parsing_container_unsupported-3003)
 4. [踩坑四：Jetpack Compose 搜歌列表封面图丢失](#4-踩坑四jetpack-compose-搜歌列表封面图丢失)
 5. [踩坑五：Local-First 电脑本地自动化测试与调试经验](#5-踩坑五local-first-电脑本地自动化测试与调试经验)
+6. [踩坑六：为什么杀掉后台重启APP后就能正常播放？（协程阻塞与 ExoPlayer 错误状态滞留）](#6-踩坑六为什么杀掉后台重启app后就能正常播放协程阻塞与-exoplayer-错误状态滞留)
+7. [踩坑七：离线缓存策略重构（从预览即下载转变为纯收藏主动触发）](#7-踩坑七离线缓存策略重构从预览即下载转变为纯收藏主动触发)
+8. [踩坑八：去除剪切板后台自动嗅探，改为主动触发与权限隐私友好体验](#8-踩坑八去除剪切板后台自动嗅探改为主动触发与权限隐私友好体验)
+9. [踩坑九：全链路状态可见性：Material 3 Actionable Snackbar 与三层错误状态联动](#9-踩坑九全链路状态可见性material-3-actionable-snackbar-与三层错误状态联动)
 
 ---
 
@@ -121,3 +125,83 @@
    - 直接在电脑端执行 `.\gradlew.bat testDebugUnitTest`。
    - 验证音频搜索、封面 HTTP 200 状态码、音频 302 重定向解析、多音源级联全流程。
    - 跑通所有测试用例后再打包 APK，极大提升了开发和迭代的可靠性。
+
+---
+
+### 6. 踩坑六：为什么杀掉后台重启APP后就能正常播放？（协程阻塞与 ExoPlayer 错误状态滞留）
+
+#### 🔴 遇到问题
+- 用户发现某些歌曲点击后一直处于缓冲状态无法播放且无任何提示。但一旦从系统多任务把 App 后台划掉（Kill Process）重新进入，再点同一首歌曲却又能正常播放了。
+
+#### 🔍 根因剖析
+1. **OkHttp 同步阻塞调用不响应协程取消**：
+   - 旧代码中解析 302 重定向使用的是同步 `redirectResolverClient.newCall(req).execute()`。
+   - 当用户连续点击不同歌曲或网络较慢时，代码执行了 `prepareJob?.cancel()`。
+   - 然而 Java 原生的 Socket I/O（`InputStream.read()` / `Socket.connect()`）**不会因 Kotlin 协程取消而中断**，导致 OkHttp 的调度线程池被超时中的死连接持续霸占，直到 8~15 秒超时结束。
+2. **ExoPlayer 播放器进入错误状态后未执行重置**：
+   - 当 ExoPlayer 因解码或 404 触发 `onPlayerError(PlaybackException)` 时，播放器内部停留在 `STATE_IDLE` 并锁定了错误态。
+   - 若直接调用 `exoPlayer.setMediaItem()` 且未调用 `exoPlayer.stop()` 和 `exoPlayer.clearMediaItems()`，底层的媒体管道和解码器无法清除上一次失败残留的上下文，后续播放指令被静默忽略。
+3. **为什么“杀后台”能恢复？**：
+   - 杀死进程会强行销毁操作系统的所有 TCP 孤儿 Socket，重置 OkHttp 线程池，并重新实例化全新的 ExoPlayer 对象，因此重新打开后能够成功发起新连接。
+
+#### 🟢 彻底解决方案
+1. **实现可协同取消的异步 OkHttp 扩展**：
+   封装 [`NetworkUtils.kt`](file:///C:/code/music-app/app/src/main/java/com/personal/musicapp/util/NetworkUtils.kt)：
+   ```kotlin
+   suspend fun Call.awaitResponse(): Response = suspendCancellableCoroutine { continuation ->
+       continuation.invokeOnCancellation {
+           try { cancel() } catch (_: Throwable) {} // 协程取消时立即切断底层 TCP Socket
+       }
+       enqueue(object : Callback {
+           override fun onResponse(call: Call, response: Response) = continuation.resume(response)
+           override fun onFailure(call: Call, e: IOException) {
+               if (!continuation.isCancelled) continuation.resumeWithException(e)
+           }
+       })
+   }
+   ```
+2. **每次切歌与异常时强制清理播放器状态**：
+   在 [`MusicPlayerManager.kt`](file:///C:/code/music-app/app/src/main/java/com/personal/musicapp/player/MusicPlayerManager.kt) 中：
+   - `playSong()` 开始时立即执行：`exoPlayer.stop()` 与 `exoPlayer.clearMediaItems()`。
+   - `onPlayerError()` 发生时立即执行：`exoPlayer.stop()` 与 `exoPlayer.clearMediaItems()`。
+   确保无需用户杀死 App 也能保持纯净的播放流水线。
+
+---
+
+### 7. 踩坑七：离线缓存策略重构（从预览即下载转变为纯收藏主动触发）
+
+#### 🔴 遇到问题
+- 用户反馈听歌时如果点击一首就自动下载一首，手机本地离线文件会快速膨胀占用过多存储；希望改成“在线仅缓冲流式播放，只有用户主动点击收藏时才触发离线保存”。
+
+#### 🟢 彻底解决方案
+1. **纯流式试听，零磁盘写入**：
+   - 搜歌与普通点击播放时，完全走 ExoPlayer 内存流式缓冲，不写入本地磁盘文件。
+2. **收藏主动触发离线下载**：
+   - 在 [`LocalMusicRepository.kt`](file:///C:/code/music-app/app/src/main/java/com/personal/musicapp/data/local/LocalMusicRepository.kt) 中，仅在 `addFavorite()` 时调用 `cacheSongLocally()`，并在后台下载高清音频和封面。
+   - 当用户在列表中取消收藏时，自动删除对应缓存的 MP3 和封面文件，实现存储零残留。
+3. **协议补全保护**：
+   - 下载前对 `kuwo://$rid` 与网易云 outer URL 进行实时直链解析，确保写入本地磁盘的是有效的音频文件，且过滤小于 5KB 的 HTML 错误页面。
+
+---
+
+### 8. 踩坑八：去除剪切板后台自动嗅探，改为主动触发与权限隐私友好体验
+
+#### 🔴 遇到问题
+- 每次打开 App 时后台自动检测系统剪切板，容易触发 Android 12+ 隐私吐司提醒（“MusicApp 正在粘贴自您的剪贴板”），且用户并未复制相关链接时体验突兀。
+
+#### 🟢 彻底解决方案
+- **删除 `LaunchedEffect(Unit)` 中的自启动检测**。
+- **改为主动触发按钮**：在搜索栏下方常驻【📋 粘贴并解析链接】按钮与快捷标签。
+- 只有在用户主动点击按钮时才读取剪切板，若剪切板无内容或为空，通过底部 Snackbar 友好提示，符合 Android 现代隐私规范。
+
+---
+
+### 9. 踩坑九：全链路状态可见性：Material 3 Actionable Snackbar 与三层错误状态联动
+
+#### 🔴 遇到问题
+- 歌曲因版权受限无法播放时，界面没有任何提示，用户误以为播放器卡死或没有响应。
+
+#### 🟢 彻底解决方案
+- **底部行动条 Snackbar**：播放失败时弹出 Material 3 Snackbar（带“【下一首】”按钮），如果属于版权音源，提示用户并提供快速跳过。
+- **迷你播放栏与大图全屏状态联动**：若当前歌曲解析受限或正在缓冲，在歌曲副标题处用红色高亮显示“《歌名》暂无可用音源（受版权保护）”或“正在缓冲解析音源...”，不再保持沉默。
+- **列表项即时态**：当前点击的条目直接显示“正在缓冲解析...”或“暂无可用音源”，视觉反馈一目了然。
