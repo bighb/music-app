@@ -1,11 +1,8 @@
 package com.personal.musicapp.ui
 
-import android.content.ClipboardManager
-import android.content.Context
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Explore
@@ -28,22 +25,21 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import com.personal.musicapp.MusicApplication
 import com.personal.musicapp.data.model.Song
+import com.personal.musicapp.ui.components.DebugLogDialog
 import com.personal.musicapp.ui.components.FullPlayerDialog
 import com.personal.musicapp.ui.components.MiniPlayerBar
 import com.personal.musicapp.ui.screens.DiscoverScreen
 import com.personal.musicapp.ui.screens.FavoritesScreen
+import com.personal.musicapp.util.AppLogger
 import kotlinx.coroutines.launch
 
 @Composable
 fun MainScreen(
     initialSharedText: String? = null
 ) {
-    val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val app = MusicApplication.instance
     val playerManager = app.playerManager
@@ -52,6 +48,8 @@ fun MainScreen(
 
     val playerState by playerManager.playerState.collectAsState()
     val favoritesList by localRepo.favorites.collectAsState()
+    val playHistoryList by localRepo.playHistory.collectAsState()
+    val searchHistory by localRepo.searchHistory.collectAsState()
 
     var selectedTab by remember { mutableIntStateOf(0) }
     var searchQuery by remember { mutableStateOf("") }
@@ -59,11 +57,13 @@ fun MainScreen(
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var showFullPlayer by remember { mutableStateOf(false) }
+    var showDebugDialog by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
 
     fun parseAndPlay(linkOrText: String) {
         isLoading = true
         errorMessage = null
+        AppLogger.i("MainScreen", "Parsing link: $linkOrText")
         coroutineScope.launch {
             try {
                 val song = sourceManager.parseShareLink(linkOrText)
@@ -73,20 +73,25 @@ fun MainScreen(
                     playerManager.playSong(song, listOf(song))
                     snackbarHostState.showSnackbar("解析成功: 《${song.title}》")
                 } else {
-                    errorMessage = "未能解析到有效音频，请检查链接是否有效后重试"
+                    errorMessage = "未能解析到有效音频，请检查链接后重试"
+                    AppLogger.w("MainScreen", "Failed to parse link: $linkOrText")
                     snackbarHostState.showSnackbar(errorMessage!!)
                 }
             } catch (e: Exception) {
                 isLoading = false
-                errorMessage = "解析发生错误: ${e.localizedMessage ?: "未知网络错误"}"
+                errorMessage = "解析发生错误: ${e.localizedMessage ?: "网络错误"}"
+                AppLogger.e("MainScreen", "Parse link error", e)
                 snackbarHostState.showSnackbar(errorMessage!!)
             }
         }
     }
 
-    fun performSearch() {
-        val query = searchQuery.trim()
+    fun performSearch(queryToSearch: String = searchQuery) {
+        val query = queryToSearch.trim()
         if (query.isEmpty()) return
+
+        // Save to search history
+        localRepo.addSearchQuery(query)
 
         if (sourceManager.findSourceForLink(query) != null || query.contains("http://") || query.contains("https://")) {
             parseAndPlay(query)
@@ -95,50 +100,22 @@ fun MainScreen(
 
         isLoading = true
         errorMessage = null
+        AppLogger.i("MainScreen", "Searching: $query")
         coroutineScope.launch {
             try {
                 val results = sourceManager.search(query)
                 isLoading = false
                 if (results.isEmpty()) {
                     errorMessage = "未找到与 \"$query\" 相关的音频，请尝试其他关键词"
+                    AppLogger.w("MainScreen", "No search results for: $query")
                 } else {
                     searchResults = results
+                    AppLogger.i("MainScreen", "Found ${results.size} results for: $query")
                 }
             } catch (e: Exception) {
                 isLoading = false
                 errorMessage = "搜索失败: ${e.localizedMessage ?: "网络错误"}"
-            }
-        }
-    }
-
-    fun handlePasteAndParse() {
-        try {
-            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-            val clipData = clipboard?.primaryClip
-            if (clipData == null || clipData.itemCount == 0) {
-                coroutineScope.launch {
-                    snackbarHostState.showSnackbar("剪切板中暂无内容，请先复制短视频或音乐分享链接")
-                }
-                return
-            }
-
-            val pastedText = clipData.getItemAt(0)?.text?.toString()?.trim() ?: ""
-            if (pastedText.isEmpty()) {
-                coroutineScope.launch {
-                    snackbarHostState.showSnackbar("剪切板内容为空")
-                }
-                return
-            }
-
-            searchQuery = pastedText
-            if (sourceManager.findSourceForLink(pastedText) != null || pastedText.contains("http://") || pastedText.contains("https://")) {
-                parseAndPlay(pastedText)
-            } else {
-                performSearch()
-            }
-        } catch (e: Exception) {
-            coroutineScope.launch {
-                snackbarHostState.showSnackbar("读取剪切板失败: ${e.localizedMessage ?: "权限错误"}")
+                AppLogger.e("MainScreen", "Search error for $query", e)
             }
         }
     }
@@ -148,9 +125,9 @@ fun MainScreen(
         coroutineScope.launch {
             localRepo.toggleFavorite(song)
             if (willBeFavorited) {
-                snackbarHostState.showSnackbar("已收藏《${song.title}》，正在后台离线缓存（支持无网畅听）")
+                snackbarHostState.showSnackbar("已收藏《${song.title}》，正在后台离线缓存")
             } else {
-                snackbarHostState.showSnackbar("已从收藏移除，已自动清理本地离线缓存")
+                snackbarHostState.showSnackbar("已从收藏移除")
             }
         }
     }
@@ -169,11 +146,11 @@ fun MainScreen(
             snackbarHostState.currentSnackbarData?.dismiss()
             val result = snackbarHostState.showSnackbar(
                 message = err,
-                actionLabel = if (playerState.playlist.size > 1) "下一首" else "我知道了",
+                actionLabel = "查看日志",
                 duration = SnackbarDuration.Short
             )
-            if (result == SnackbarResult.ActionPerformed && playerState.playlist.size > 1) {
-                playerManager.skipNext()
+            if (result == SnackbarResult.ActionPerformed) {
+                showDebugDialog = true
             }
         }
     }
@@ -201,8 +178,8 @@ fun MainScreen(
                     NavigationBarItem(
                         selected = selectedTab == 1,
                         onClick = { selectedTab = 1 },
-                        icon = { Icon(Icons.Default.Favorite, contentDescription = "收藏") },
-                        label = { Text("我的收藏") }
+                        icon = { Icon(Icons.Default.Favorite, contentDescription = "音乐库") },
+                        label = { Text("音乐库") }
                     )
                 }
             }
@@ -219,8 +196,18 @@ fun MainScreen(
                         searchQuery = searchQuery,
                         onSearchQueryChange = { searchQuery = it },
                         onSearch = { performSearch() },
-                        onPasteAndParse = { handlePasteAndParse() },
                         searchResults = searchResults,
+                        searchHistory = searchHistory,
+                        onSelectHistoryQuery = { q ->
+                            searchQuery = q
+                            performSearch(q)
+                        },
+                        onDeleteHistoryQuery = { q ->
+                            localRepo.removeSearchQuery(q)
+                        },
+                        onClearSearchHistory = {
+                            localRepo.clearSearchHistory()
+                        },
                         isLoading = isLoading,
                         errorMessage = errorMessage,
                         playerState = playerState,
@@ -230,18 +217,56 @@ fun MainScreen(
                         },
                         onToggleFavorite = { song ->
                             handleToggleFavorite(song)
+                        },
+                        onPlayNext = { song ->
+                            playerManager.playNext(song)
+                            coroutineScope.launch {
+                                snackbarHostState.showSnackbar("已设为下一首播放: 《${song.title}》")
+                            }
+                        },
+                        onAddToPlaylist = { song ->
+                            playerManager.addToPlaylist(song)
+                            coroutineScope.launch {
+                                snackbarHostState.showSnackbar("已加入播放队列: 《${song.title}》")
+                            }
+                        },
+                        onOpenDebug = {
+                            showDebugDialog = true
                         }
                     )
                 }
                 1 -> {
                     FavoritesScreen(
                         favoritesList = favoritesList,
+                        playHistoryList = playHistoryList,
                         playerState = playerState,
                         onSongClick = { song ->
-                            playerManager.playSong(song, favoritesList)
+                            val currentList = if (favoritesList.any { it.id == song.id }) favoritesList else playHistoryList
+                            playerManager.playSong(song, currentList)
                         },
                         onToggleFavorite = { song ->
                             handleToggleFavorite(song)
+                        },
+                        onPlayNext = { song ->
+                            playerManager.playNext(song)
+                            coroutineScope.launch {
+                                snackbarHostState.showSnackbar("已设为下一首播放: 《${song.title}》")
+                            }
+                        },
+                        onAddToPlaylist = { song ->
+                            playerManager.addToPlaylist(song)
+                            coroutineScope.launch {
+                                snackbarHostState.showSnackbar("已加入播放队列: 《${song.title}》")
+                            }
+                        },
+                        onRemoveHistoryItem = { songId ->
+                            localRepo.removePlayHistoryItem(songId)
+                        },
+                        onClearHistory = {
+                            localRepo.clearPlayHistory()
+                            coroutineScope.launch {
+                                snackbarHostState.showSnackbar("播放历史已清空")
+                            }
                         },
                         onPlayAll = {
                             if (favoritesList.isNotEmpty()) {
@@ -256,6 +281,9 @@ fun MainScreen(
                         },
                         onNavigateToDiscover = {
                             selectedTab = 0
+                        },
+                        onOpenDebug = {
+                            showDebugDialog = true
                         }
                     )
                 }
@@ -279,6 +307,12 @@ fun MainScreen(
             onToggleFavorite = {
                 handleToggleFavorite(currentSong)
             }
+        )
+    }
+
+    if (showDebugDialog) {
+        DebugLogDialog(
+            onDismiss = { showDebugDialog = false }
         )
     }
 }

@@ -12,15 +12,25 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.PlaylistAdd
+import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.outlined.CloudDone
 import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -43,8 +53,13 @@ fun SongListItem(
     onToggleFavorite: () -> Unit,
     modifier: Modifier = Modifier,
     isBuffering: Boolean = false,
-    hasError: Boolean = false
+    hasError: Boolean = false,
+    onPlayNext: (() -> Unit)? = null,
+    onAddToPlaylist: (() -> Unit)? = null,
+    onRemove: (() -> Unit)? = null
 ) {
+    var showMenu by remember { mutableStateOf(false) }
+
     val containerBg = when {
         hasError -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f)
         isPlaying -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
@@ -57,13 +72,13 @@ fun SongListItem(
             .clip(RoundedCornerShape(12.dp))
             .background(containerBg)
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+            .padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         // Cover Image
         Box(
             modifier = Modifier
-                .size(54.dp)
+                .size(50.dp)
                 .clip(RoundedCornerShape(8.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant),
             contentAlignment = Alignment.Center
@@ -84,7 +99,7 @@ fun SongListItem(
             }
         }
 
-        Spacer(modifier = Modifier.width(12.dp))
+        Spacer(modifier = Modifier.width(10.dp))
 
         // Title and Artist
         Column(modifier = Modifier.weight(1f)) {
@@ -148,10 +163,10 @@ fun SongListItem(
                         Icon(
                             imageVector = Icons.Outlined.CloudDone,
                             contentDescription = "已离线",
-                            modifier = Modifier.size(14.dp),
+                            modifier = Modifier.size(13.dp),
                             tint = MaterialTheme.colorScheme.tertiary
                         )
-                        Spacer(modifier = Modifier.width(4.dp))
+                        Spacer(modifier = Modifier.width(3.dp))
                     }
 
                     Text(
@@ -177,13 +192,79 @@ fun SongListItem(
             }
         }
 
-        // Favorite Toggle
-        IconButton(onClick = onToggleFavorite) {
-            Icon(
-                imageVector = if (isFavorited) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
-                contentDescription = if (isFavorited) "取消收藏" else "收藏",
-                tint = if (isFavorited) Color(0xFFFF2D55) else MaterialTheme.colorScheme.onSurfaceVariant
-            )
+        // Action Icons
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            // Favorite Toggle
+            IconButton(
+                onClick = onToggleFavorite,
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(
+                    imageVector = if (isFavorited) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                    contentDescription = if (isFavorited) "取消收藏" else "收藏",
+                    tint = if (isFavorited) Color(0xFFFF2D55) else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+
+            // More Options Menu
+            Box {
+                IconButton(
+                    onClick = { showMenu = true },
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.MoreVert,
+                        contentDescription = "更多操作",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+
+                DropdownMenu(
+                    expanded = showMenu,
+                    onDismissRequest = { showMenu = false }
+                ) {
+                    if (onPlayNext != null) {
+                        DropdownMenuItem(
+                            text = { Text("下一首播放", fontSize = 13.sp) },
+                            leadingIcon = {
+                                Icon(Icons.Default.QueueMusic, contentDescription = null, modifier = Modifier.size(18.dp))
+                            },
+                            onClick = {
+                                showMenu = false
+                                onPlayNext()
+                            }
+                        )
+                    }
+
+                    if (onAddToPlaylist != null) {
+                        DropdownMenuItem(
+                            text = { Text("加入播放队列", fontSize = 13.sp) },
+                            leadingIcon = {
+                                Icon(Icons.Default.PlaylistAdd, contentDescription = null, modifier = Modifier.size(18.dp))
+                            },
+                            onClick = {
+                                showMenu = false
+                                onAddToPlaylist()
+                            }
+                        )
+                    }
+
+                    if (onRemove != null) {
+                        DropdownMenuItem(
+                            text = { Text("从列表中移除", fontSize = 13.sp, color = MaterialTheme.colorScheme.error) },
+                            leadingIcon = {
+                                Icon(Icons.Default.DeleteOutline, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
+                            },
+                            onClick = {
+                                showMenu = false
+                                onRemove()
+                            }
+                        )
+                    }
+                }
+            }
         }
     }
 }
