@@ -116,24 +116,44 @@ music-app/
 ### 1. 电脑本地接口自动化验证
 在打包前可直接在电脑上测试全网搜索、封面获取与音频直链解析：
 ```powershell
+# Windows
 .\gradlew.bat testDebugUnitTest --console=plain
+```
+```bash
+# macOS
+./gradlew testDebugUnitTest --console=plain
 ```
 
 ### 2. 命令行打包 APK
 ```powershell
+# Windows
 .\gradlew.bat assembleDebug --console=plain
+```
+```bash
+# macOS
+./gradlew assembleDebug --console=plain
 ```
 编译产物将自动生成于 `app/build/outputs/apk/debug/app-debug.apk`，并同步更新到根目录的 `music-app.apk`。
 
 ### 3. 一键真机推流安装
 手机开启「USB 调试」并通过数据线连接电脑后，直接运行：
 ```powershell
+# Windows
 .\install-to-phone.ps1
+```
+```bash
+# macOS（需先安装 adb：brew install --cask android-platform-tools）
+./install-to-phone.sh
 ```
 
 ### 4. 实时查看真机日志
 ```powershell
+# Windows
 .\view-phone-logcat.ps1
+```
+```bash
+# macOS
+./view-phone-logcat.sh
 ```
 
 ---
