@@ -141,7 +141,7 @@ music-app/
 ## 📖 踩坑与排错实战笔记
 
 关于开发过程中遇到的抖音接口反爬、ExoPlayer 跨协议重定向拦截、3003 容器解析错误等详细排查过程，请参阅：
-👉 **[开发踩坑与排错全记录 (DEVELOPMENT_PITFALLS_AND_SOLUTIONS.md)](file:///C:/code/music-app/docs/DEVELOPMENT_PITFALLS_AND_SOLUTIONS.md)**
+👉 **[开发踩坑与排错全记录 (DEVELOPMENT_PITFALLS_AND_SOLUTIONS.md)](./docs/DEVELOPMENT_PITFALLS_AND_SOLUTIONS.md)**
 
 ---
 

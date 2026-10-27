@@ -52,6 +52,16 @@ android {
     }
 }
 
+val syncDebugApk = tasks.register("syncDebugApk") {
+    val src = layout.buildDirectory.file("outputs/apk/debug/app-debug.apk")
+    val dst = rootProject.layout.projectDirectory.file("music-app.apk")
+    inputs.file(src)
+    outputs.file(dst)
+    doLast { src.get().asFile.copyTo(dst.asFile, overwrite = true) }
+}
+
+tasks.matching { it.name == "assembleDebug" }.configureEach { finalizedBy(syncDebugApk) }
+
 dependencies {
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")

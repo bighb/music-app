@@ -82,7 +82,7 @@
 
 #### 🟢 彻底解决方案
 1. **404 嗅探与安全拦截**：在预解析 302 链接时，判断目标地址若包含 `/404` 或 `404.html`，立即终止并绝不传给播放器。
-2. **多音源自动级联切换 ([`KuwoAudioHelper.kt`](file:///C:/code/music-app/app/src/main/java/com/personal/musicapp/data/source/KuwoAudioHelper.kt))**：
+2. **多音源自动级联切换 ([`KuwoAudioHelper.kt`](../app/src/main/java/com/personal/musicapp/data/source/KuwoAudioHelper.kt))**：
    - 当检测到首选音源受限时，程序在后台**毫秒级自动级联至酷我音乐无损库**检索同名歌曲。
    - 通过 `anti.s` 接口直接换取纯正的 `https://kw-lv.kuwo.cn/.../xxx.mp3`（实测返回 HTTP 200，MIME 类型为 `audio/mpeg`）。
    - 用户无感知即可顺利听到原本受限的歌曲。
@@ -99,7 +99,7 @@
 - 基础搜索接口只返回歌曲和歌手的基础数据，其中歌手图片大多是默认灰度头像（`5639395138885805.jpg`），而真实的专辑封面 `album.picUrl` 在搜索结果中为 `null`。
 
 #### 🟢 彻底解决方案
-- 在 [`NetMusicAudioSource.kt`](file:///C:/code/music-app/app/src/main/java/com/personal/musicapp/data/source/NetMusicAudioSource.kt) 中引入**批量歌曲详情检索**：
+- 在 [`NetMusicAudioSource.kt`](../app/src/main/java/com/personal/musicapp/data/source/NetMusicAudioSource.kt) 中引入**批量歌曲详情检索**：
   ```kotlin
   // 一次性通过单个网络请求批量获取全部专辑真实封面
   val detailUrl = "https://music.163.com/api/song/detail/?ids=[${songIds.joinToString(",")}]"
@@ -121,7 +121,7 @@
        unitTests.isReturnDefaultValues = true
    }
    ```
-2. **编写真实网络流单元测试 ([`AudioSourceTest.kt`](file:///C:/code/music-app/app/src/test/java/com/personal/musicapp/AudioSourceTest.kt))**：
+2. **编写真实网络流单元测试 ([`AudioSourceTest.kt`](../app/src/test/java/com/personal/musicapp/AudioSourceTest.kt))**：
    - 直接在电脑端执行 `.\gradlew.bat testDebugUnitTest`。
    - 验证音频搜索、封面 HTTP 200 状态码、音频 302 重定向解析、多音源级联全流程。
    - 跑通所有测试用例后再打包 APK，极大提升了开发和迭代的可靠性。
@@ -146,7 +146,7 @@
 
 #### 🟢 彻底解决方案
 1. **实现可协同取消的异步 OkHttp 扩展**：
-   封装 [`NetworkUtils.kt`](file:///C:/code/music-app/app/src/main/java/com/personal/musicapp/util/NetworkUtils.kt)：
+   封装 [`NetworkUtils.kt`](../app/src/main/java/com/personal/musicapp/util/NetworkUtils.kt)：
    ```kotlin
    suspend fun Call.awaitResponse(): Response = suspendCancellableCoroutine { continuation ->
        continuation.invokeOnCancellation {
@@ -161,7 +161,7 @@
    }
    ```
 2. **每次切歌与异常时强制清理播放器状态**：
-   在 [`MusicPlayerManager.kt`](file:///C:/code/music-app/app/src/main/java/com/personal/musicapp/player/MusicPlayerManager.kt) 中：
+   在 [`MusicPlayerManager.kt`](../app/src/main/java/com/personal/musicapp/player/MusicPlayerManager.kt) 中：
    - `playSong()` 开始时立即执行：`exoPlayer.stop()` 与 `exoPlayer.clearMediaItems()`。
    - `onPlayerError()` 发生时立即执行：`exoPlayer.stop()` 与 `exoPlayer.clearMediaItems()`。
    确保无需用户杀死 App 也能保持纯净的播放流水线。
@@ -177,7 +177,7 @@
 1. **纯流式试听，零磁盘写入**：
    - 搜歌与普通点击播放时，完全走 ExoPlayer 内存流式缓冲，不写入本地磁盘文件。
 2. **收藏主动触发离线下载**：
-   - 在 [`LocalMusicRepository.kt`](file:///C:/code/music-app/app/src/main/java/com/personal/musicapp/data/local/LocalMusicRepository.kt) 中，仅在 `addFavorite()` 时调用 `cacheSongLocally()`，并在后台下载高清音频和封面。
+   - 在 [`LocalMusicRepository.kt`](../app/src/main/java/com/personal/musicapp/data/local/LocalMusicRepository.kt) 中，仅在 `addFavorite()` 时调用 `cacheSongLocally()`，并在后台下载高清音频和封面。
    - 当用户在列表中取消收藏时，自动删除对应缓存的 MP3 和封面文件，实现存储零残留。
 3. **协议补全保护**：
    - 下载前对 `kuwo://$rid` 与网易云 outer URL 进行实时直链解析，确保写入本地磁盘的是有效的音频文件，且过滤小于 5KB 的 HTML 错误页面。
