@@ -56,8 +56,10 @@ fun MainScreen(
     val searchHistory by localRepo.searchHistory.collectAsState()
 
     var selectedTab by remember { mutableIntStateOf(0) }
+    var librarySubTab by remember { mutableIntStateOf(0) }
     var searchQuery by remember { mutableStateOf("") }
     var searchResults by remember { mutableStateOf<List<Song>>(emptyList()) }
+    var hasSearched by remember { mutableStateOf(false) }
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var showFullPlayer by remember { mutableStateOf(false) }
@@ -67,6 +69,7 @@ fun MainScreen(
 
     fun parseAndPlay(linkOrText: String) {
         isLoading = true
+        hasSearched = true
         errorMessage = null
         AppLogger.i("MainScreen", "Parsing link: $linkOrText")
         coroutineScope.launch {
@@ -104,6 +107,7 @@ fun MainScreen(
         }
 
         isLoading = true
+        hasSearched = true
         errorMessage = null
         AppLogger.i("MainScreen", "Searching: $query")
         coroutineScope.launch {
@@ -240,6 +244,26 @@ fun MainScreen(
                         errorMessage = errorMessage,
                         playerState = playerState,
                         favoritesList = favoritesList,
+                        playHistoryList = playHistoryList,
+                        downloadsCount = downloadsList.size,
+                        hasSearched = hasSearched,
+                        onClearSearchResult = {
+                            searchResults = emptyList()
+                            hasSearched = false
+                        },
+                        onNavigateToLibrary = { subTab ->
+                            librarySubTab = subTab
+                            selectedTab = 1
+                        },
+                        onResumePlayback = { song ->
+                            playerManager.playSong(song, if (playHistoryList.isNotEmpty()) playHistoryList else listOf(song))
+                        },
+                        onTogglePlayPause = {
+                            playerManager.togglePlayPause()
+                        },
+                        onOpenFullPlayer = {
+                            showFullPlayer = true
+                        },
                         downloadStatusMap = downloadStatusMap,
                         onSongClick = { song ->
                             playerManager.playSong(song, searchResults)
@@ -274,6 +298,8 @@ fun MainScreen(
                         playHistoryList = playHistoryList,
                         playerState = playerState,
                         downloadStatusMap = downloadStatusMap,
+                        selectedSubTab = librarySubTab,
+                        onSubTabChange = { librarySubTab = it },
                         onSongClick = { song, list ->
                             playerManager.playSong(song, list)
                         },
@@ -379,10 +405,20 @@ fun MainScreen(
                 playerManager.playSong(song, playerState.playlist)
             },
             onRemoveFromQueue = { songId ->
-                val removedTitle = playerState.playlist.find { it.id == songId }?.title ?: ""
-                playerManager.removeFromPlaylist(songId)
-                coroutineScope.launch {
-                    snackbarHostState.showSnackbar("已从队列移除: 《$removedTitle》")
+                val originalIndex = playerState.playlist.indexOfFirst { it.id == songId }
+                val removedSong = playerState.playlist.getOrNull(originalIndex)
+                if (removedSong != null) {
+                    playerManager.removeFromPlaylist(songId)
+                    coroutineScope.launch {
+                        val result = snackbarHostState.showSnackbar(
+                            message = "已从队列移除: 《${removedSong.title}》",
+                            actionLabel = "撤销",
+                            duration = SnackbarDuration.Short
+                        )
+                        if (result == SnackbarResult.ActionPerformed) {
+                            playerManager.insertSongIntoPlaylist(originalIndex, removedSong)
+                        }
+                    }
                 }
             },
             onReorderQueue = { from, to ->

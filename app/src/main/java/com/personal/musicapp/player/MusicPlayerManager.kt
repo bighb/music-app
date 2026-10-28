@@ -462,6 +462,27 @@ class MusicPlayerManager(private val context: Context) {
         AppLogger.i(tag, "Cleared playlist queue")
     }
 
+    fun insertSongIntoPlaylist(index: Int, song: Song) {
+        val state = _playerState.value
+        if (state.playlist.isEmpty() && state.currentSong == null) {
+            playSong(song, listOf(song))
+            return
+        }
+        val newPlaylist = state.playlist.toMutableList()
+        val safeIndex = index.coerceIn(0, newPlaylist.size)
+        if (!newPlaylist.any { it.id == song.id }) {
+            newPlaylist.add(safeIndex, song)
+            val updatedCurrentIndex = newPlaylist.indexOfFirst { it.id == state.currentSong?.id }
+            _playerState.update {
+                it.copy(
+                    playlist = newPlaylist,
+                    currentIndex = if (updatedCurrentIndex != -1) updatedCurrentIndex else it.currentIndex
+                )
+            }
+            AppLogger.i(tag, "Restored 《${song.title}》 to playlist at index $safeIndex")
+        }
+    }
+
     fun togglePlayPause() {
         if (exoPlayer.isPlaying) {
             exoPlayer.pause()

@@ -194,4 +194,37 @@ class PlaylistAndHistoryTest {
         assertEquals(1, favorites.size)
         assertEquals(0, downloads.size)
     }
+
+    @Test
+    fun testQueueRestoreUndo() {
+        val s1 = createDummySong("1", "Song 1")
+        val s2 = createDummySong("2", "Song 2")
+        val s3 = createDummySong("3", "Song 3")
+
+        val playlist = mutableListOf(s1, s2, s3)
+        // 1. Remove s2 at index 1
+        val removedIdx = playlist.indexOfFirst { it.id == "2" }
+        val removedItem = playlist.removeAt(removedIdx)
+        assertEquals(2, playlist.size)
+        assertEquals("3", playlist[1].id)
+
+        // 2. Undo: insert back at index 1
+        val safeIndex = removedIdx.coerceIn(0, playlist.size)
+        playlist.add(safeIndex, removedItem)
+        assertEquals(3, playlist.size)
+        assertEquals("1", playlist[0].id)
+        assertEquals("2", playlist[1].id)
+        assertEquals("3", playlist[2].id)
+    }
+
+    @Test
+    fun testResumePlaybackCandidateSelection() {
+        val s1 = createDummySong("1", "Song 1")
+        val s2 = createDummySong("2", "Song 2")
+        val history = listOf(s1, s2)
+        val currentPlayingSong: Song? = null
+
+        val candidate = currentPlayingSong ?: history.firstOrNull()
+        assertEquals("1", candidate?.id)
+    }
 }

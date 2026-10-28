@@ -58,6 +58,8 @@ fun FavoritesScreen(
     playHistoryList: List<Song>,
     playerState: PlayerState,
     downloadStatusMap: Map<String, DownloadState> = emptyMap(),
+    selectedSubTab: Int = 0,
+    onSubTabChange: (Int) -> Unit = {},
     onSongClick: (Song, List<Song>) -> Unit,
     onToggleFavorite: (Song) -> Unit,
     onDownload: (Song) -> Unit = {},
@@ -74,8 +76,6 @@ fun FavoritesScreen(
     onOpenDebug: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var selectedSubTab by remember { mutableIntStateOf(0) } // 0: 收藏, 1: 下载, 2: 历史
-
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -116,7 +116,7 @@ fun FavoritesScreen(
         ) {
             Tab(
                 selected = selectedSubTab == 0,
-                onClick = { selectedSubTab = 0 },
+                onClick = { onSubTabChange(0) },
                 text = {
                     Text(
                         text = "我的收藏 (${favoritesList.size})",
@@ -126,7 +126,7 @@ fun FavoritesScreen(
             )
             Tab(
                 selected = selectedSubTab == 1,
-                onClick = { selectedSubTab = 1 },
+                onClick = { onSubTabChange(1) },
                 text = {
                     Text(
                         text = "我的下载 (${downloadsList.size})",
@@ -136,7 +136,7 @@ fun FavoritesScreen(
             )
             Tab(
                 selected = selectedSubTab == 2,
-                onClick = { selectedSubTab = 2 },
+                onClick = { onSubTabChange(2) },
                 text = {
                     Text(
                         text = "播放历史 (${playHistoryList.size})",

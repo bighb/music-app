@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -180,12 +181,13 @@ fun FullPlayerDialog(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
-                // Vinyl Disc record presentation
+                // Vinyl Disc record presentation with adaptive sizing
                 Box(
                     modifier = Modifier
-                        .size(280.dp)
+                        .sizeIn(minWidth = 180.dp, minHeight = 180.dp, maxWidth = 280.dp, maxHeight = 280.dp)
+                        .size(260.dp)
                         .shadow(24.dp, CircleShape)
                         .clip(CircleShape)
                         .background(
@@ -193,26 +195,26 @@ fun FullPlayerDialog(
                                 colors = listOf(Color(0xFF2B2B2B), Color(0xFF151515), Color(0xFF050505))
                             )
                         )
-                        .border(6.dp, Color(0xFF262626), CircleShape)
+                        .border(5.dp, Color(0xFF262626), CircleShape)
                         .rotate(if (playerState.isPlaying) rotation else 0f),
                     contentAlignment = Alignment.Center
                 ) {
                     // Inner grooves
                     Box(
                         modifier = Modifier
-                            .size(230.dp)
+                            .size(210.dp)
                             .border(1.dp, Color(0xFF333333), CircleShape)
                     )
                     Box(
                         modifier = Modifier
-                            .size(190.dp)
+                            .size(170.dp)
                             .border(1.dp, Color(0xFF333333), CircleShape)
                     )
 
                     // Album Center Artwork
                     Box(
                         modifier = Modifier
-                            .size(160.dp)
+                            .size(145.dp)
                             .clip(CircleShape)
                             .background(MaterialTheme.colorScheme.surfaceVariant),
                         contentAlignment = Alignment.Center
@@ -228,7 +230,7 @@ fun FullPlayerDialog(
                             Icon(
                                 imageVector = Icons.Default.MusicNote,
                                 contentDescription = null,
-                                modifier = Modifier.size(60.dp),
+                                modifier = Modifier.size(54.dp),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
@@ -237,14 +239,14 @@ fun FullPlayerDialog(
                     // Center hole
                     Box(
                         modifier = Modifier
-                            .size(24.dp)
+                            .size(22.dp)
                             .clip(CircleShape)
                             .background(Color(0xFF0A0A0A))
                             .border(2.dp, Color(0xFF4A4A4A), CircleShape)
                     )
                 }
 
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(16.dp))
 
                 // Song Title & Artist info
                 Column(
