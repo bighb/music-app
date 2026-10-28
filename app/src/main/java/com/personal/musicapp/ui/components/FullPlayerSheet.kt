@@ -21,13 +21,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Shuffle
@@ -267,7 +267,8 @@ fun FullPlayerDialog(
                         textAlign = TextAlign.Center
                     )
 
-                    if (playerState.playerError != null) {
+                    val currentError = playerState.playerError
+                    if (currentError != null) {
                         Spacer(modifier = Modifier.height(8.dp))
                         Surface(
                             shape = RoundedCornerShape(8.dp),
@@ -275,7 +276,7 @@ fun FullPlayerDialog(
                             modifier = Modifier.padding(horizontal = 16.dp)
                         ) {
                             Text(
-                                text = playerState.playerError!!,
+                                text = currentError,
                                 style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.error),
                                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                                 textAlign = TextAlign.Center
@@ -411,7 +412,7 @@ fun FullPlayerDialog(
                     // Playlist queue button
                     IconButton(onClick = onOpenQueue) {
                         Icon(
-                            imageVector = Icons.Default.QueueMusic,
+                            imageVector = Icons.AutoMirrored.Filled.QueueMusic,
                             contentDescription = "播放队列",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(28.dp)

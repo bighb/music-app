@@ -183,8 +183,10 @@ class MusicPlayerManager(private val context: Context) {
                 var playFromLocal = false
                 var playUri: Uri? = null
 
-                if (!song.localAudioPath.isNullOrEmpty()) {
-                    val localFile = File(song.localAudioPath)
+                val effectiveAudioPath = song.localAudioPath ?: MusicApplication.instance.localRepository.downloads.value.find { it.id == song.id }?.localAudioPath
+
+                if (!effectiveAudioPath.isNullOrEmpty()) {
+                    val localFile = File(effectiveAudioPath)
                     if (localFile.exists() && localFile.length() >= 10000) {
                         playFromLocal = true
                         playUri = Uri.fromFile(localFile)
@@ -217,9 +219,10 @@ class MusicPlayerManager(private val context: Context) {
                     playUri = Uri.parse(directPlayUrl)
                 }
 
+                val effectiveCoverPath = song.localCoverPath ?: MusicApplication.instance.localRepository.downloads.value.find { it.id == song.id }?.localCoverPath
                 val artworkUri = when {
-                    song.localCoverPath != null && File(song.localCoverPath).exists() -> {
-                        Uri.fromFile(File(song.localCoverPath))
+                    effectiveCoverPath != null && File(effectiveCoverPath).exists() -> {
+                        Uri.fromFile(File(effectiveCoverPath))
                     }
                     song.coverUrl.isNotEmpty() -> Uri.parse(song.coverUrl)
                     else -> null

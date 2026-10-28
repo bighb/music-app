@@ -11,6 +11,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -168,6 +169,9 @@ class LocalMusicRepository(private val context: Context) {
                 }
                 null
             }
+            if (validated.size != list.size) {
+                saveDownloadsToFile(validated)
+            }
             _downloads.value = validated
             updateDownloadStates(validated)
             AppLogger.d(tag, "Loaded ${validated.size} downloads")
@@ -177,11 +181,13 @@ class LocalMusicRepository(private val context: Context) {
     }
 
     private fun updateDownloadStates(downloadedSongs: List<Song>) {
-        val states = _downloadStates.value.toMutableMap()
-        for (song in downloadedSongs) {
-            states[song.id] = DownloadState.Downloaded
+        _downloadStates.update { current ->
+            val updated = current.toMutableMap()
+            for (song in downloadedSongs) {
+                updated[song.id] = DownloadState.Downloaded
+            }
+            updated
         }
-        _downloadStates.value = states
     }
 
     private fun saveDownloadsToFile(list: List<Song>) {
@@ -204,14 +210,12 @@ class LocalMusicRepository(private val context: Context) {
     }
 
     fun downloadSong(song: Song, onFinished: ((Boolean, String?) -> Unit)? = null) {
-        if (isDownloaded(song.id)) {
+        if (isDownloaded(song.id) || _downloadStates.value[song.id] is DownloadState.Downloading) {
             onFinished?.invoke(true, null)
             return
         }
 
-        val currentStates = _downloadStates.value.toMutableMap()
-        currentStates[song.id] = DownloadState.Downloading(0f)
-        _downloadStates.value = currentStates
+        _downloadStates.update { it + (song.id to DownloadState.Downloading(0f)) }
 
         scope.launch {
             try {
@@ -220,9 +224,7 @@ class LocalMusicRepository(private val context: Context) {
                 if (directAudioUrl.isNullOrEmpty() || !directAudioUrl.startsWith("http")) {
                     val errMsg = "未能解析到有效下载直链"
                     AppLogger.w(tag, "Could not resolve playable download URL for 《${song.title}》")
-                    val failedStates = _downloadStates.value.toMutableMap()
-                    failedStates[song.id] = DownloadState.Failed(errMsg)
-                    _downloadStates.value = failedStates
+                    _downloadStates.update { it + (song.id to DownloadState.Failed(errMsg)) }
                     onFinished?.invoke(false, errMsg)
                     return@launch
                 }
@@ -232,9 +234,7 @@ class LocalMusicRepository(private val context: Context) {
                 if (!downloadSuccess || !audioFile.exists() || audioFile.length() < 10000) {
                     if (audioFile.exists()) audioFile.delete()
                     val errMsg = "音频下载失败或文件损坏"
-                    val failedStates = _downloadStates.value.toMutableMap()
-                    failedStates[song.id] = DownloadState.Failed(errMsg)
-                    _downloadStates.value = failedStates
+                    _downloadStates.update { it + (song.id to DownloadState.Failed(errMsg)) }
                     onFinished?.invoke(false, errMsg)
                     return@launch
                 }
@@ -249,62 +249,70 @@ class LocalMusicRepository(private val context: Context) {
                     }
                 }
 
-                val currentDownloads = _downloads.value.toMutableList()
-                currentDownloads.removeAll { it.id == song.id }
-                currentDownloads.add(0, updatedSong)
-                _downloads.value = currentDownloads
-                saveDownloadsToFile(currentDownloads)
+                var currentDownloadsList: List<Song> = emptyList()
+                _downloads.update { current ->
+                    val list = current.toMutableList()
+                    list.removeAll { it.id == song.id }
+                    list.add(0, updatedSong)
+                    currentDownloadsList = list
+                    list
+                }
+                saveDownloadsToFile(currentDownloadsList)
 
-                val currentFavorites = _favorites.value.toMutableList()
-                val favIndex = currentFavorites.indexOfFirst { it.id == song.id }
-                if (favIndex != -1) {
-                    currentFavorites[favIndex] = currentFavorites[favIndex].copy(
-                        localAudioPath = updatedSong.localAudioPath,
-                        localCoverPath = updatedSong.localCoverPath
-                    )
-                    _favorites.value = currentFavorites
-                    saveFavoritesToFile(currentFavorites)
+                _favorites.update { current ->
+                    val list = current.toMutableList()
+                    val favIndex = list.indexOfFirst { it.id == song.id }
+                    if (favIndex != -1) {
+                        list[favIndex] = list[favIndex].copy(
+                            localAudioPath = updatedSong.localAudioPath,
+                            localCoverPath = updatedSong.localCoverPath
+                        )
+                        saveFavoritesToFile(list)
+                    }
+                    list
                 }
 
-                val doneStates = _downloadStates.value.toMutableMap()
-                doneStates[song.id] = DownloadState.Downloaded
-                _downloadStates.value = doneStates
+                _downloadStates.update { it + (song.id to DownloadState.Downloaded) }
                 AppLogger.i(tag, "Downloaded 《${song.title}》 successfully (${audioFile.length() / 1024} KB)")
                 onFinished?.invoke(true, null)
             } catch (e: Exception) {
                 AppLogger.e(tag, "Download failed for 《${song.title}》", e)
-                val failedStates = _downloadStates.value.toMutableMap()
-                failedStates[song.id] = DownloadState.Failed(e.localizedMessage ?: "下载异常")
-                _downloadStates.value = failedStates
-                onFinished?.invoke(false, e.localizedMessage ?: "网络异常")
+                val errMsg = e.localizedMessage ?: "下载异常"
+                _downloadStates.update { it + (song.id to DownloadState.Failed(errMsg)) }
+                onFinished?.invoke(false, errMsg)
             }
         }
     }
 
     suspend fun deleteDownload(songId: String) = withContext(Dispatchers.IO) {
-        val currentDownloads = _downloads.value.toMutableList()
-        val target = currentDownloads.find { it.id == songId }
-        currentDownloads.removeAll { it.id == songId }
-        _downloads.value = currentDownloads
-        saveDownloadsToFile(currentDownloads)
+        var targetSong: Song? = null
+        var currentDownloadsList: List<Song> = emptyList()
+        _downloads.update { current ->
+            val list = current.toMutableList()
+            targetSong = list.find { it.id == songId }
+            list.removeAll { it.id == songId }
+            currentDownloadsList = list
+            list
+        }
+        saveDownloadsToFile(currentDownloadsList)
 
-        target?.let { deleteCachedFiles(it) }
+        targetSong?.let { deleteCachedFiles(it) }
 
-        val currentFavorites = _favorites.value.toMutableList()
-        val favIndex = currentFavorites.indexOfFirst { it.id == songId }
-        if (favIndex != -1) {
-            currentFavorites[favIndex] = currentFavorites[favIndex].copy(
-                localAudioPath = null,
-                localCoverPath = null
-            )
-            _favorites.value = currentFavorites
-            saveFavoritesToFile(currentFavorites)
+        _favorites.update { current ->
+            val list = current.toMutableList()
+            val favIndex = list.indexOfFirst { it.id == songId }
+            if (favIndex != -1) {
+                list[favIndex] = list[favIndex].copy(
+                    localAudioPath = null,
+                    localCoverPath = null
+                )
+                saveFavoritesToFile(list)
+            }
+            list
         }
 
-        val states = _downloadStates.value.toMutableMap()
-        states[songId] = DownloadState.NotDownloaded
-        _downloadStates.value = states
-        AppLogger.i(tag, "Deleted download: ${target?.title ?: songId}")
+        _downloadStates.update { it + (songId to DownloadState.NotDownloaded) }
+        AppLogger.i(tag, "Deleted download: ${targetSong?.title ?: songId}")
     }
 
     private suspend fun resolveDownloadUrl(song: Song): String? {

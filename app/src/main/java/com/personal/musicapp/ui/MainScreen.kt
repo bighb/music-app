@@ -274,13 +274,8 @@ fun MainScreen(
                         playHistoryList = playHistoryList,
                         playerState = playerState,
                         downloadStatusMap = downloadStatusMap,
-                        onSongClick = { song ->
-                            val currentList = when {
-                                downloadsList.any { it.id == song.id } -> downloadsList
-                                favoritesList.any { it.id == song.id } -> favoritesList
-                                else -> playHistoryList
-                            }
-                            playerManager.playSong(song, currentList)
+                        onSongClick = { song, list ->
+                            playerManager.playSong(song, list)
                         },
                         onToggleFavorite = { song ->
                             handleToggleFavorite(song)
