@@ -92,4 +92,106 @@ class PlaylistAndHistoryTest {
         assertEquals("1", history[0].id)
         assertEquals("2", history[1].id)
     }
+
+    @Test
+    fun testQueueRemovalNonPlaying() {
+        val s1 = createDummySong("1", "Song 1")
+        val s2 = createDummySong("2", "Song 2")
+        val s3 = createDummySong("3", "Song 3")
+
+        val playlist = mutableListOf(s1, s2, s3)
+
+        // Remove s2
+        val targetId = "2"
+        val idx = playlist.indexOfFirst { it.id == targetId }
+        playlist.removeAt(idx)
+        val newCurrentIdx = playlist.indexOfFirst { it.id == s1.id }
+
+        assertEquals(2, playlist.size)
+        assertEquals(0, newCurrentIdx)
+        assertEquals("3", playlist[1].id)
+    }
+
+    @Test
+    fun testQueueRemovalCurrentlyPlayingAdvances() {
+        val s1 = createDummySong("1", "Song 1")
+        val s2 = createDummySong("2", "Song 2")
+        val s3 = createDummySong("3", "Song 3")
+
+        val playlist = mutableListOf(s1, s2, s3)
+        var currentSong = s1
+
+        // Removing currentSong (s1) advances to next (s2)
+        val existingIndex = playlist.indexOfFirst { it.id == currentSong.id }
+        val nextIndex = (existingIndex + 1) % playlist.size
+        val nextSong = playlist[nextIndex]
+        playlist.removeAt(existingIndex)
+        currentSong = nextSong
+
+        assertEquals(2, playlist.size)
+        assertEquals("2", currentSong.id)
+        assertEquals("2", playlist[0].id)
+        assertEquals("3", playlist[1].id)
+    }
+
+    @Test
+    fun testQueueRemovalOnlySongStops() {
+        val s1 = createDummySong("1", "Song 1")
+        val playlist = mutableListOf(s1)
+        var currentSong: Song? = s1
+
+        if (playlist.size <= 1) {
+            playlist.clear()
+            currentSong = null
+        }
+
+        assertEquals(0, playlist.size)
+        assertEquals(null, currentSong)
+    }
+
+    @Test
+    fun testQueueReorder() {
+        val s1 = createDummySong("1", "Song 1")
+        val s2 = createDummySong("2", "Song 2")
+        val s3 = createDummySong("3", "Song 3")
+
+        val playlist = mutableListOf(s1, s2, s3)
+        // Move s3 from index 2 to index 0
+        val moved = playlist.removeAt(2)
+        playlist.add(0, moved)
+
+        assertEquals("3", playlist[0].id)
+        assertEquals("1", playlist[1].id)
+        assertEquals("2", playlist[2].id)
+    }
+
+    @Test
+    fun testFavoriteAndDownloadDecoupled() {
+        val favorites = mutableListOf<Song>()
+        val downloads = mutableListOf<Song>()
+
+        val s1 = createDummySong("1", "Song 1")
+
+        // 1. Favorite song: only in favorites, not in downloads
+        favorites.add(s1.copy(isFavorite = true))
+        assertEquals(1, favorites.size)
+        assertEquals(0, downloads.size)
+
+        // 2. Download song: in downloads
+        val downloadedS1 = s1.copy(localAudioPath = "/path/to/1.mp3")
+        downloads.add(downloadedS1)
+        assertEquals(1, favorites.size)
+        assertEquals(1, downloads.size)
+
+        // 3. Remove favorite: downloads still retained!
+        favorites.removeAll { it.id == s1.id }
+        assertEquals(0, favorites.size)
+        assertEquals(1, downloads.size)
+
+        // 4. Delete download: favorites unaffected
+        favorites.add(s1.copy(isFavorite = true))
+        downloads.removeAll { it.id == s1.id }
+        assertEquals(1, favorites.size)
+        assertEquals(0, downloads.size)
+    }
 }

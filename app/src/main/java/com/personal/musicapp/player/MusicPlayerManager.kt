@@ -374,6 +374,91 @@ class MusicPlayerManager(private val context: Context) {
         }
     }
 
+    fun removeFromPlaylist(songId: String) {
+        val state = _playerState.value
+        val existingIndex = state.playlist.indexOfFirst { it.id == songId }
+        if (existingIndex == -1) return
+
+        if (songId == state.currentSong?.id) {
+            if (state.playlist.size <= 1) {
+                try {
+                    exoPlayer.stop()
+                    exoPlayer.clearMediaItems()
+                } catch (_: Exception) {}
+                _playerState.update {
+                    it.copy(
+                        currentSong = null,
+                        playlist = emptyList(),
+                        currentIndex = 0,
+                        isPlaying = false,
+                        isBuffering = false,
+                        currentPositionMs = 0L,
+                        durationMs = 0L,
+                        playerError = null
+                    )
+                }
+                AppLogger.i(tag, "Removed only song from playlist, playback stopped")
+                return
+            }
+
+            val nextIndex = (existingIndex + 1) % state.playlist.size
+            val nextSong = state.playlist[nextIndex]
+            val newPlaylist = state.playlist.toMutableList()
+            newPlaylist.removeAt(existingIndex)
+            playSong(nextSong, newPlaylist)
+            AppLogger.i(tag, "Removed currently playing song $songId, advanced to 《${nextSong.title}》")
+        } else {
+            val newPlaylist = state.playlist.toMutableList()
+            newPlaylist.removeAt(existingIndex)
+            val updatedCurrentIndex = newPlaylist.indexOfFirst { it.id == state.currentSong?.id }
+            _playerState.update {
+                it.copy(
+                    playlist = newPlaylist,
+                    currentIndex = if (updatedCurrentIndex != -1) updatedCurrentIndex else 0
+                )
+            }
+            AppLogger.i(tag, "Removed song $songId from playlist")
+        }
+    }
+
+    fun reorderPlaylist(fromIndex: Int, toIndex: Int) {
+        val state = _playerState.value
+        if (fromIndex !in state.playlist.indices || toIndex !in state.playlist.indices || fromIndex == toIndex) return
+
+        val newPlaylist = state.playlist.toMutableList()
+        val movedItem = newPlaylist.removeAt(fromIndex)
+        newPlaylist.add(toIndex, movedItem)
+
+        val updatedCurrentIndex = newPlaylist.indexOfFirst { it.id == state.currentSong?.id }
+        _playerState.update {
+            it.copy(
+                playlist = newPlaylist,
+                currentIndex = if (updatedCurrentIndex != -1) updatedCurrentIndex else it.currentIndex
+            )
+        }
+        AppLogger.d(tag, "Reordered playlist: moved from $fromIndex to $toIndex")
+    }
+
+    fun clearPlaylist() {
+        try {
+            exoPlayer.stop()
+            exoPlayer.clearMediaItems()
+        } catch (_: Exception) {}
+        _playerState.update {
+            it.copy(
+                currentSong = null,
+                playlist = emptyList(),
+                currentIndex = 0,
+                isPlaying = false,
+                isBuffering = false,
+                currentPositionMs = 0L,
+                durationMs = 0L,
+                playerError = null
+            )
+        }
+        AppLogger.i(tag, "Cleared playlist queue")
+    }
+
     fun togglePlayPause() {
         if (exoPlayer.isPlaying) {
             exoPlayer.pause()

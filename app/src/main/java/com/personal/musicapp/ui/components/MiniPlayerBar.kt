@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -53,6 +54,7 @@ fun MiniPlayerBar(
     onBarClick: () -> Unit,
     onTogglePlay: () -> Unit,
     onSkipNext: () -> Unit,
+    onOpenQueue: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val song = playerState.currentSong ?: return
@@ -173,6 +175,17 @@ fun MiniPlayerBar(
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(26.dp)
                     )
+                }
+
+                if (onOpenQueue != null) {
+                    IconButton(onClick = onOpenQueue) {
+                        Icon(
+                            imageVector = Icons.Default.QueueMusic,
+                            contentDescription = "播放队列",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
                 }
             }
 

@@ -19,6 +19,13 @@ import java.io.File
 import java.io.FileOutputStream
 import java.util.concurrent.TimeUnit
 
+sealed class DownloadState {
+    object NotDownloaded : DownloadState()
+    data class Downloading(val progress: Float = 0f) : DownloadState()
+    object Downloaded : DownloadState()
+    data class Failed(val error: String) : DownloadState()
+}
+
 class LocalMusicRepository(private val context: Context) {
 
     private val tag = "LocalMusicRepository"
@@ -31,12 +38,19 @@ class LocalMusicRepository(private val context: Context) {
 
     private val prefs = context.getSharedPreferences("music_app_prefs", Context.MODE_PRIVATE)
     private val favoritesFile = File(context.filesDir, "favorites_v1.json")
+    private val downloadsFile = File(context.filesDir, "downloads_v1.json")
     private val historyFile = File(context.filesDir, "play_history_v1.json")
     private val audioDir = File(context.filesDir, "audio").apply { if (!exists()) mkdirs() }
     private val coverDir = File(context.filesDir, "covers").apply { if (!exists()) mkdirs() }
 
     private val _favorites = MutableStateFlow<List<Song>>(emptyList())
     val favorites: StateFlow<List<Song>> = _favorites.asStateFlow()
+
+    private val _downloads = MutableStateFlow<List<Song>>(emptyList())
+    val downloads: StateFlow<List<Song>> = _downloads.asStateFlow()
+
+    private val _downloadStates = MutableStateFlow<Map<String, DownloadState>>(emptyMap())
+    val downloadStates: StateFlow<Map<String, DownloadState>> = _downloadStates.asStateFlow()
 
     private val _playHistory = MutableStateFlow<List<Song>>(emptyList())
     val playHistory: StateFlow<List<Song>> = _playHistory.asStateFlow()
@@ -46,6 +60,7 @@ class LocalMusicRepository(private val context: Context) {
 
     init {
         loadFavorites()
+        loadDownloads()
         loadPlayHistory()
         loadSearchHistory()
     }
@@ -102,16 +117,17 @@ class LocalMusicRepository(private val context: Context) {
         val current = _favorites.value.toMutableList()
         current.removeAll { it.id == song.id }
 
-        val favoritedSong = song.copy(isFavorite = true, addedTimestamp = System.currentTimeMillis())
+        val existingDownload = _downloads.value.find { it.id == song.id }
+        val favoritedSong = song.copy(
+            isFavorite = true,
+            localAudioPath = existingDownload?.localAudioPath ?: song.localAudioPath,
+            localCoverPath = existingDownload?.localCoverPath ?: song.localCoverPath,
+            addedTimestamp = System.currentTimeMillis()
+        )
         current.add(0, favoritedSong)
         _favorites.value = current
         saveFavoritesToFile(current)
         AppLogger.i(tag, "Added favorite: 《${song.title}》")
-
-        // Trigger background download for offline caching
-        scope.launch {
-            cacheSongLocally(favoritedSong)
-        }
     }
 
     suspend fun removeFavorite(songId: String) = withContext(Dispatchers.IO) {
@@ -121,57 +137,174 @@ class LocalMusicRepository(private val context: Context) {
         _favorites.value = current
         saveFavoritesToFile(current)
         AppLogger.i(tag, "Removed favorite: ${target?.title ?: songId}")
-
-        // Clean up cached files
-        target?.let { deleteCachedFiles(it) }
     }
 
-    private suspend fun cacheSongLocally(song: Song) = withContext(Dispatchers.IO) {
-        try {
-            var updatedSong = song
-            // 1. Download audio file ONLY if not already downloaded or file is invalid
-            val currentAudioPath = song.localAudioPath
-            val isAudioCached = currentAudioPath != null && File(currentAudioPath).exists() && File(currentAudioPath).length() >= 10000
+    // ==================== Downloads ====================
 
-            if (!isAudioCached) {
-                AppLogger.d(tag, "Resolving stream url to cache 《${song.title}》...")
-                val directAudioUrl = resolveDownloadUrl(song)
-                if (!directAudioUrl.isNullOrEmpty() && directAudioUrl.startsWith("http")) {
-                    val audioFile = File(audioDir, "${cleanFileName(song.id)}.mp3")
-                    val downloadSuccess = downloadFile(directAudioUrl, audioFile)
-                    if (downloadSuccess && audioFile.exists() && audioFile.length() >= 10000) {
-                        updatedSong = updatedSong.copy(localAudioPath = audioFile.absolutePath)
-                        AppLogger.i(tag, "Cached audio successfully for 《${song.title}》 (${audioFile.length() / 1024} KB)")
-                    } else {
-                        AppLogger.w(tag, "Failed to download audio or file too small for 《${song.title}》: size=${audioFile.length()}")
-                        if (audioFile.exists()) audioFile.delete()
-                    }
-                } else {
-                    AppLogger.w(tag, "Could not resolve playable download URL for 《${song.title}》")
-                }
+    private fun loadDownloads() {
+        if (!downloadsFile.exists()) {
+            val initialDownloads = _favorites.value.filter { it.localAudioPath != null && File(it.localAudioPath).exists() }
+            if (initialDownloads.isNotEmpty()) {
+                _downloads.value = initialDownloads
+                saveDownloadsToFile(initialDownloads)
+                updateDownloadStates(initialDownloads)
+                AppLogger.d(tag, "Migrated ${initialDownloads.size} downloads from favorites")
             }
-
-            // 2. Download cover file
-            val isCoverCached = !song.localCoverPath.isNullOrEmpty() && File(song.localCoverPath).exists()
-            if (!song.coverUrl.isNullOrEmpty() && !isCoverCached) {
-                val coverFile = File(coverDir, "${cleanFileName(song.id)}.jpg")
-                val downloadSuccess = downloadFile(song.coverUrl, coverFile)
-                if (downloadSuccess && coverFile.exists() && coverFile.length() > 500) {
-                    updatedSong = updatedSong.copy(localCoverPath = coverFile.absolutePath)
-                }
-            }
-
-            // Update in favorites list
-            val current = _favorites.value.toMutableList()
-            val index = current.indexOfFirst { it.id == song.id }
-            if (index != -1) {
-                current[index] = updatedSong
-                _favorites.value = current
-                saveFavoritesToFile(current)
-            }
-        } catch (e: Exception) {
-            AppLogger.e(tag, "Exception during cacheSongLocally for 《${song.title}》", e)
+            return
         }
+        try {
+            val json = downloadsFile.readText()
+            val type = object : TypeToken<List<Song>>() {}.type
+            val list: List<Song> = gson.fromJson(json, type) ?: emptyList()
+            val validated = list.mapNotNull { song ->
+                val audioPath = song.localAudioPath
+                if (audioPath != null) {
+                    val f = File(audioPath)
+                    if (f.exists() && f.length() >= 10000) {
+                        return@mapNotNull song
+                    } else {
+                        if (f.exists()) f.delete()
+                    }
+                }
+                null
+            }
+            _downloads.value = validated
+            updateDownloadStates(validated)
+            AppLogger.d(tag, "Loaded ${validated.size} downloads")
+        } catch (e: Exception) {
+            AppLogger.e(tag, "Failed to load downloads", e)
+        }
+    }
+
+    private fun updateDownloadStates(downloadedSongs: List<Song>) {
+        val states = _downloadStates.value.toMutableMap()
+        for (song in downloadedSongs) {
+            states[song.id] = DownloadState.Downloaded
+        }
+        _downloadStates.value = states
+    }
+
+    private fun saveDownloadsToFile(list: List<Song>) {
+        try {
+            val json = gson.toJson(list)
+            downloadsFile.writeText(json)
+        } catch (e: Exception) {
+            AppLogger.e(tag, "Failed to save downloads", e)
+        }
+    }
+
+    fun isDownloaded(songId: String): Boolean {
+        return _downloads.value.any { it.id == songId && it.localAudioPath != null && File(it.localAudioPath).exists() }
+    }
+
+    fun getDownloadState(songId: String): DownloadState {
+        val state = _downloadStates.value[songId]
+        if (state != null) return state
+        return if (isDownloaded(songId)) DownloadState.Downloaded else DownloadState.NotDownloaded
+    }
+
+    fun downloadSong(song: Song, onFinished: ((Boolean, String?) -> Unit)? = null) {
+        if (isDownloaded(song.id)) {
+            onFinished?.invoke(true, null)
+            return
+        }
+
+        val currentStates = _downloadStates.value.toMutableMap()
+        currentStates[song.id] = DownloadState.Downloading(0f)
+        _downloadStates.value = currentStates
+
+        scope.launch {
+            try {
+                AppLogger.d(tag, "Starting manual download for 《${song.title}》...")
+                val directAudioUrl = resolveDownloadUrl(song)
+                if (directAudioUrl.isNullOrEmpty() || !directAudioUrl.startsWith("http")) {
+                    val errMsg = "未能解析到有效下载直链"
+                    AppLogger.w(tag, "Could not resolve playable download URL for 《${song.title}》")
+                    val failedStates = _downloadStates.value.toMutableMap()
+                    failedStates[song.id] = DownloadState.Failed(errMsg)
+                    _downloadStates.value = failedStates
+                    onFinished?.invoke(false, errMsg)
+                    return@launch
+                }
+
+                val audioFile = File(audioDir, "${cleanFileName(song.id)}.mp3")
+                val downloadSuccess = downloadFile(directAudioUrl, audioFile)
+                if (!downloadSuccess || !audioFile.exists() || audioFile.length() < 10000) {
+                    if (audioFile.exists()) audioFile.delete()
+                    val errMsg = "音频下载失败或文件损坏"
+                    val failedStates = _downloadStates.value.toMutableMap()
+                    failedStates[song.id] = DownloadState.Failed(errMsg)
+                    _downloadStates.value = failedStates
+                    onFinished?.invoke(false, errMsg)
+                    return@launch
+                }
+
+                var updatedSong = song.copy(localAudioPath = audioFile.absolutePath)
+
+                if (!song.coverUrl.isNullOrEmpty()) {
+                    val coverFile = File(coverDir, "${cleanFileName(song.id)}.jpg")
+                    val coverSuccess = downloadFile(song.coverUrl, coverFile)
+                    if (coverSuccess && coverFile.exists() && coverFile.length() > 500) {
+                        updatedSong = updatedSong.copy(localCoverPath = coverFile.absolutePath)
+                    }
+                }
+
+                val currentDownloads = _downloads.value.toMutableList()
+                currentDownloads.removeAll { it.id == song.id }
+                currentDownloads.add(0, updatedSong)
+                _downloads.value = currentDownloads
+                saveDownloadsToFile(currentDownloads)
+
+                val currentFavorites = _favorites.value.toMutableList()
+                val favIndex = currentFavorites.indexOfFirst { it.id == song.id }
+                if (favIndex != -1) {
+                    currentFavorites[favIndex] = currentFavorites[favIndex].copy(
+                        localAudioPath = updatedSong.localAudioPath,
+                        localCoverPath = updatedSong.localCoverPath
+                    )
+                    _favorites.value = currentFavorites
+                    saveFavoritesToFile(currentFavorites)
+                }
+
+                val doneStates = _downloadStates.value.toMutableMap()
+                doneStates[song.id] = DownloadState.Downloaded
+                _downloadStates.value = doneStates
+                AppLogger.i(tag, "Downloaded 《${song.title}》 successfully (${audioFile.length() / 1024} KB)")
+                onFinished?.invoke(true, null)
+            } catch (e: Exception) {
+                AppLogger.e(tag, "Download failed for 《${song.title}》", e)
+                val failedStates = _downloadStates.value.toMutableMap()
+                failedStates[song.id] = DownloadState.Failed(e.localizedMessage ?: "下载异常")
+                _downloadStates.value = failedStates
+                onFinished?.invoke(false, e.localizedMessage ?: "网络异常")
+            }
+        }
+    }
+
+    suspend fun deleteDownload(songId: String) = withContext(Dispatchers.IO) {
+        val currentDownloads = _downloads.value.toMutableList()
+        val target = currentDownloads.find { it.id == songId }
+        currentDownloads.removeAll { it.id == songId }
+        _downloads.value = currentDownloads
+        saveDownloadsToFile(currentDownloads)
+
+        target?.let { deleteCachedFiles(it) }
+
+        val currentFavorites = _favorites.value.toMutableList()
+        val favIndex = currentFavorites.indexOfFirst { it.id == songId }
+        if (favIndex != -1) {
+            currentFavorites[favIndex] = currentFavorites[favIndex].copy(
+                localAudioPath = null,
+                localCoverPath = null
+            )
+            _favorites.value = currentFavorites
+            saveFavoritesToFile(currentFavorites)
+        }
+
+        val states = _downloadStates.value.toMutableMap()
+        states[songId] = DownloadState.NotDownloaded
+        _downloadStates.value = states
+        AppLogger.i(tag, "Deleted download: ${target?.title ?: songId}")
     }
 
     private suspend fun resolveDownloadUrl(song: Song): String? {

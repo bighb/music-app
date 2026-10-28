@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
@@ -20,6 +21,7 @@ import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.outlined.CloudDone
 import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -48,12 +50,15 @@ import com.personal.musicapp.ui.util.FormatUtils
 fun SongListItem(
     song: Song,
     isPlaying: Boolean,
-    isFavorited: Boolean,
+    isFavorited: Boolean = false,
     onClick: () -> Unit,
-    onToggleFavorite: () -> Unit,
     modifier: Modifier = Modifier,
     isBuffering: Boolean = false,
     hasError: Boolean = false,
+    isDownloaded: Boolean = false,
+    isDownloading: Boolean = false,
+    onDownload: (() -> Unit)? = null,
+    onDeleteDownload: (() -> Unit)? = null,
     onPlayNext: (() -> Unit)? = null,
     onAddToPlaylist: (() -> Unit)? = null,
     onRemove: (() -> Unit)? = null
@@ -136,6 +141,16 @@ fun SongListItem(
                         )
                     }
                 }
+
+                if (isFavorited) {
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Icon(
+                        imageVector = Icons.Filled.Favorite,
+                        contentDescription = "已收藏",
+                        tint = Color(0xFFFF2D55),
+                        modifier = Modifier.size(13.dp)
+                    )
+                }
             }
 
             Row(
@@ -194,16 +209,20 @@ fun SongListItem(
 
         // Action Icons
         Row(verticalAlignment = Alignment.CenterVertically) {
-            // Favorite Toggle
-            IconButton(
-                onClick = onToggleFavorite,
-                modifier = Modifier.size(36.dp)
-            ) {
+            if (isDownloading) {
+                CircularProgressIndicator(
+                    modifier = Modifier
+                        .size(18.dp)
+                        .padding(2.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            } else if (isDownloaded || song.localAudioPath != null) {
                 Icon(
-                    imageVector = if (isFavorited) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
-                    contentDescription = if (isFavorited) "取消收藏" else "收藏",
-                    tint = if (isFavorited) Color(0xFFFF2D55) else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(20.dp)
+                    imageVector = Icons.Outlined.CloudDone,
+                    contentDescription = "已离线",
+                    modifier = Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.tertiary
                 )
             }
 
@@ -247,6 +266,33 @@ fun SongListItem(
                             onClick = {
                                 showMenu = false
                                 onAddToPlaylist()
+                            }
+                        )
+                    }
+
+                    if (onDownload != null && !isDownloaded && song.localAudioPath == null) {
+                        DropdownMenuItem(
+                            text = { Text(if (isDownloading) "正在下载中..." else "下载到本地", fontSize = 13.sp) },
+                            leadingIcon = {
+                                Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                            },
+                            enabled = !isDownloading,
+                            onClick = {
+                                showMenu = false
+                                onDownload()
+                            }
+                        )
+                    }
+
+                    if (onDeleteDownload != null && (isDownloaded || song.localAudioPath != null)) {
+                        DropdownMenuItem(
+                            text = { Text("删除离线文件", fontSize = 13.sp, color = MaterialTheme.colorScheme.error) },
+                            leadingIcon = {
+                                Icon(Icons.Default.DeleteOutline, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
+                            },
+                            onClick = {
+                                showMenu = false
+                                onDeleteDownload()
                             }
                         )
                     }

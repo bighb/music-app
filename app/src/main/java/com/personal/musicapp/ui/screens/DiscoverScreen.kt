@@ -52,6 +52,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.personal.musicapp.data.local.DownloadState
 import com.personal.musicapp.data.model.Song
 import com.personal.musicapp.player.PlayerState
 import com.personal.musicapp.ui.components.DebugIconButton
@@ -72,15 +73,16 @@ fun DiscoverScreen(
     errorMessage: String?,
     playerState: PlayerState,
     favoritesList: List<Song>,
+    downloadStatusMap: Map<String, DownloadState> = emptyMap(),
     onSongClick: (Song) -> Unit,
-    onToggleFavorite: (Song) -> Unit,
+    onDownload: (Song) -> Unit = {},
+    onDeleteDownload: (Song) -> Unit = {},
     onPlayNext: (Song) -> Unit,
     onAddToPlaylist: (Song) -> Unit,
     onOpenDebug: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val focusManager = LocalFocusManager.current
-    val quickKeywords = listOf("周杰伦", "热歌榜", "纯音乐", "陈奕迅", "林俊杰", "王菲", "陶喆")
 
     Column(
         modifier = modifier
@@ -168,26 +170,7 @@ fun DiscoverScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(10.dp))
-
-        // Hot keywords row
-        LazyRow(
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            items(quickKeywords) { kw ->
-                SuggestionChip(
-                    onClick = {
-                        onSearchQueryChange(kw)
-                        focusManager.clearFocus()
-                        onSelectHistoryQuery(kw)
-                    },
-                    label = { Text(kw, fontSize = 11.sp) }
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(14.dp))
 
         // Content Area: Loading, Error, Results or Empty State
         when {
@@ -353,10 +336,12 @@ fun DiscoverScreen(
                 ) {
                     items(searchResults, key = { it.id }) { song ->
                         val isCurrent = playerState.currentSong?.id == song.id
-                        val isPlaying = isCurrent && playerState.isPlaying
                         val isBuffering = isCurrent && playerState.isBuffering
                         val hasError = isCurrent && playerState.playerError != null
                         val isFavorited = favoritesList.any { it.id == song.id }
+
+                        val isDownloaded = downloadStatusMap[song.id] is DownloadState.Downloaded || song.localAudioPath != null
+                        val isDownloading = downloadStatusMap[song.id] is DownloadState.Downloading
 
                         SongListItem(
                             song = song,
@@ -364,8 +349,11 @@ fun DiscoverScreen(
                             isFavorited = isFavorited,
                             isBuffering = isBuffering,
                             hasError = hasError,
+                            isDownloaded = isDownloaded,
+                            isDownloading = isDownloading,
                             onClick = { onSongClick(song) },
-                            onToggleFavorite = { onToggleFavorite(song) },
+                            onDownload = { onDownload(song) },
+                            onDeleteDownload = { onDeleteDownload(song) },
                             onPlayNext = { onPlayNext(song) },
                             onAddToPlaylist = { onAddToPlaylist(song) }
                         )

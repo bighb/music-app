@@ -27,10 +27,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import com.personal.musicapp.MusicApplication
+import com.personal.musicapp.data.local.DownloadState
 import com.personal.musicapp.data.model.Song
 import com.personal.musicapp.ui.components.DebugLogDialog
 import com.personal.musicapp.ui.components.FullPlayerDialog
 import com.personal.musicapp.ui.components.MiniPlayerBar
+import com.personal.musicapp.ui.components.PlaylistBottomSheet
 import com.personal.musicapp.ui.screens.DiscoverScreen
 import com.personal.musicapp.ui.screens.FavoritesScreen
 import com.personal.musicapp.util.AppLogger
@@ -48,6 +50,8 @@ fun MainScreen(
 
     val playerState by playerManager.playerState.collectAsState()
     val favoritesList by localRepo.favorites.collectAsState()
+    val downloadsList by localRepo.downloads.collectAsState()
+    val downloadStatusMap by localRepo.downloadStates.collectAsState()
     val playHistoryList by localRepo.playHistory.collectAsState()
     val searchHistory by localRepo.searchHistory.collectAsState()
 
@@ -57,6 +61,7 @@ fun MainScreen(
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var showFullPlayer by remember { mutableStateOf(false) }
+    var showQueueSheet by remember { mutableStateOf(false) }
     var showDebugDialog by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -125,10 +130,32 @@ fun MainScreen(
         coroutineScope.launch {
             localRepo.toggleFavorite(song)
             if (willBeFavorited) {
-                snackbarHostState.showSnackbar("已收藏《${song.title}》，正在后台离线缓存")
+                snackbarHostState.showSnackbar("已添加到收藏")
             } else {
                 snackbarHostState.showSnackbar("已从收藏移除")
             }
+        }
+    }
+
+    fun handleDownload(song: Song) {
+        coroutineScope.launch {
+            snackbarHostState.showSnackbar("开始下载《${song.title}》...")
+            localRepo.downloadSong(song) { success, errorMsg ->
+                coroutineScope.launch {
+                    if (success) {
+                        snackbarHostState.showSnackbar("已下载完成: 《${song.title}》")
+                    } else {
+                        snackbarHostState.showSnackbar("下载失败: ${errorMsg ?: "网络异常"}")
+                    }
+                }
+            }
+        }
+    }
+
+    fun handleDeleteDownload(song: Song) {
+        coroutineScope.launch {
+            localRepo.deleteDownload(song.id)
+            snackbarHostState.showSnackbar("已删除《${song.title}》的本地离线文件")
         }
     }
 
@@ -164,7 +191,8 @@ fun MainScreen(
                         playerState = playerState,
                         onBarClick = { showFullPlayer = true },
                         onTogglePlay = { playerManager.togglePlayPause() },
-                        onSkipNext = { playerManager.skipNext() }
+                        onSkipNext = { playerManager.skipNext() },
+                        onOpenQueue = { showQueueSheet = true }
                     )
                 }
 
@@ -212,11 +240,15 @@ fun MainScreen(
                         errorMessage = errorMessage,
                         playerState = playerState,
                         favoritesList = favoritesList,
+                        downloadStatusMap = downloadStatusMap,
                         onSongClick = { song ->
                             playerManager.playSong(song, searchResults)
                         },
-                        onToggleFavorite = { song ->
-                            handleToggleFavorite(song)
+                        onDownload = { song ->
+                            handleDownload(song)
+                        },
+                        onDeleteDownload = { song ->
+                            handleDeleteDownload(song)
                         },
                         onPlayNext = { song ->
                             playerManager.playNext(song)
@@ -238,14 +270,26 @@ fun MainScreen(
                 1 -> {
                     FavoritesScreen(
                         favoritesList = favoritesList,
+                        downloadsList = downloadsList,
                         playHistoryList = playHistoryList,
                         playerState = playerState,
+                        downloadStatusMap = downloadStatusMap,
                         onSongClick = { song ->
-                            val currentList = if (favoritesList.any { it.id == song.id }) favoritesList else playHistoryList
+                            val currentList = when {
+                                downloadsList.any { it.id == song.id } -> downloadsList
+                                favoritesList.any { it.id == song.id } -> favoritesList
+                                else -> playHistoryList
+                            }
                             playerManager.playSong(song, currentList)
                         },
                         onToggleFavorite = { song ->
                             handleToggleFavorite(song)
+                        },
+                        onDownload = { song ->
+                            handleDownload(song)
+                        },
+                        onDeleteDownload = { song ->
+                            handleDeleteDownload(song)
                         },
                         onPlayNext = { song ->
                             playerManager.playNext(song)
@@ -268,14 +312,25 @@ fun MainScreen(
                                 snackbarHostState.showSnackbar("播放历史已清空")
                             }
                         },
-                        onPlayAll = {
+                        onPlayAllFavorites = {
                             if (favoritesList.isNotEmpty()) {
                                 playerManager.playSong(favoritesList.first(), favoritesList)
                             }
                         },
-                        onShuffleAll = {
+                        onShuffleAllFavorites = {
                             if (favoritesList.isNotEmpty()) {
                                 val shuffled = favoritesList.shuffled()
+                                playerManager.playSong(shuffled.first(), shuffled)
+                            }
+                        },
+                        onPlayAllDownloads = {
+                            if (downloadsList.isNotEmpty()) {
+                                playerManager.playSong(downloadsList.first(), downloadsList)
+                            }
+                        },
+                        onShuffleAllDownloads = {
+                            if (downloadsList.isNotEmpty()) {
+                                val shuffled = downloadsList.shuffled()
                                 playerManager.playSong(shuffled.first(), shuffled)
                             }
                         },
@@ -294,10 +349,14 @@ fun MainScreen(
     if (showFullPlayer && playerState.currentSong != null) {
         val currentSong = playerState.currentSong!!
         val isFavorited = favoritesList.any { it.id == currentSong.id }
+        val isDownloaded = localRepo.isDownloaded(currentSong.id)
+        val isDownloading = downloadStatusMap[currentSong.id] is DownloadState.Downloading
 
         FullPlayerDialog(
             playerState = playerState,
             isFavorited = isFavorited,
+            isDownloaded = isDownloaded,
+            isDownloading = isDownloading,
             onDismiss = { showFullPlayer = false },
             onTogglePlay = { playerManager.togglePlayPause() },
             onSeekTo = { pos -> playerManager.seekTo(pos) },
@@ -306,6 +365,51 @@ fun MainScreen(
             onToggleMode = { playerManager.togglePlaybackMode() },
             onToggleFavorite = {
                 handleToggleFavorite(currentSong)
+            },
+            onDownload = {
+                handleDownload(currentSong)
+            },
+            onOpenQueue = {
+                showQueueSheet = true
+            }
+        )
+    }
+
+    if (showQueueSheet) {
+        PlaylistBottomSheet(
+            playerState = playerState,
+            playHistoryList = playHistoryList,
+            onDismiss = { showQueueSheet = false },
+            onSelectSong = { song ->
+                playerManager.playSong(song, playerState.playlist)
+            },
+            onRemoveFromQueue = { songId ->
+                val removedTitle = playerState.playlist.find { it.id == songId }?.title ?: ""
+                playerManager.removeFromPlaylist(songId)
+                coroutineScope.launch {
+                    snackbarHostState.showSnackbar("已从队列移除: 《$removedTitle》")
+                }
+            },
+            onReorderQueue = { from, to ->
+                playerManager.reorderPlaylist(from, to)
+            },
+            onClearQueue = {
+                playerManager.clearPlaylist()
+                coroutineScope.launch {
+                    snackbarHostState.showSnackbar("播放队列已清空")
+                }
+            },
+            onClearHistory = {
+                localRepo.clearPlayHistory()
+                coroutineScope.launch {
+                    snackbarHostState.showSnackbar("播放历史已清空")
+                }
+            },
+            onAddToQueue = { song ->
+                playerManager.addToPlaylist(song)
+                coroutineScope.launch {
+                    snackbarHostState.showSnackbar("已加入播放队列: 《${song.title}》")
+                }
             }
         )
     }

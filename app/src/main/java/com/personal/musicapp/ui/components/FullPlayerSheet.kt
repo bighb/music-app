@@ -21,16 +21,19 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.outlined.CloudDone
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledIconButton
@@ -72,13 +75,17 @@ import com.personal.musicapp.ui.util.FormatUtils
 fun FullPlayerDialog(
     playerState: PlayerState,
     isFavorited: Boolean,
+    isDownloaded: Boolean = false,
+    isDownloading: Boolean = false,
     onDismiss: () -> Unit,
     onTogglePlay: () -> Unit,
     onSeekTo: (Long) -> Unit,
     onSkipNext: () -> Unit,
     onSkipPrevious: () -> Unit,
     onToggleMode: () -> Unit,
-    onToggleFavorite: () -> Unit
+    onToggleFavorite: () -> Unit,
+    onDownload: () -> Unit = {},
+    onOpenQueue: () -> Unit = {}
 ) {
     val song = playerState.currentSong ?: return
 
@@ -138,12 +145,38 @@ fun FullPlayerDialog(
                         )
                     }
 
-                    IconButton(onClick = onToggleFavorite) {
-                        Icon(
-                            imageVector = if (isFavorited) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
-                            contentDescription = "收藏",
-                            tint = if (isFavorited) Color(0xFFFF2D55) else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = onDownload) {
+                            if (isDownloading) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(20.dp),
+                                    strokeWidth = 2.dp,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            } else if (isDownloaded || song.localAudioPath != null) {
+                                Icon(
+                                    imageVector = Icons.Outlined.CloudDone,
+                                    contentDescription = "已离线",
+                                    tint = MaterialTheme.colorScheme.tertiary,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.Download,
+                                    contentDescription = "离线下载",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+                        }
+
+                        IconButton(onClick = onToggleFavorite) {
+                            Icon(
+                                imageVector = if (isFavorited) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                                contentDescription = "收藏",
+                                tint = if (isFavorited) Color(0xFFFF2D55) else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
 
@@ -375,12 +408,12 @@ fun FullPlayerDialog(
                         )
                     }
 
-                    // Placeholder alignment spacer or queue button
-                    IconButton(onClick = onToggleFavorite) {
+                    // Playlist queue button
+                    IconButton(onClick = onOpenQueue) {
                         Icon(
-                            imageVector = if (isFavorited) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
-                            contentDescription = "收藏状态",
-                            tint = if (isFavorited) Color(0xFFFF2D55) else MaterialTheme.colorScheme.onSurfaceVariant,
+                            imageVector = Icons.Default.QueueMusic,
+                            contentDescription = "播放队列",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(28.dp)
                         )
                     }
