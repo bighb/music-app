@@ -106,6 +106,7 @@ music-app/
 │   └── DEVELOPMENT_PITFALLS_AND_SOLUTIONS.md   # 详细开发实战与排错笔记
 ├── install-to-phone.ps1                        # 一键真机推流安装脚本
 ├── view-phone-logcat.ps1                       # 一键实时查看真机彩色日志
+├── music-app-v1.2.0.apk                         # 对应版本的独立安装包
 └── music-app.apk                               # 编译完成的独立安装包
 ```
 
@@ -133,7 +134,7 @@ music-app/
 # macOS
 ./gradlew assembleDebug --console=plain
 ```
-编译产物将自动生成于 `app/build/outputs/apk/debug/app-debug.apk`，并同步更新到根目录的 `music-app.apk`。
+编译产物将自动生成于 `app/build/outputs/apk/debug/app-debug.apk`，并同步更新到根目录的 `music-app-v<version>.apk`（如 `music-app-v1.2.0.apk`）与 `music-app.apk`。
 
 ### 3. 一键真机推流安装
 手机开启「USB 调试」并通过数据线连接电脑后，直接运行：

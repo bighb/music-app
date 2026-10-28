@@ -54,10 +54,18 @@ android {
 
 val syncDebugApk = tasks.register("syncDebugApk") {
     val src = layout.buildDirectory.file("outputs/apk/debug/app-debug.apk")
-    val dst = rootProject.layout.projectDirectory.file("music-app.apk")
+    val ver = android.defaultConfig.versionName ?: "debug"
+    val dstVersioned = rootProject.layout.projectDirectory.file("music-app-v$ver.apk")
+    val dstLatest = rootProject.layout.projectDirectory.file("music-app.apk")
     inputs.file(src)
-    outputs.file(dst)
-    doLast { src.get().asFile.copyTo(dst.asFile, overwrite = true) }
+    outputs.files(dstVersioned, dstLatest)
+    doLast {
+        val srcFile = src.get().asFile
+        if (srcFile.exists()) {
+            srcFile.copyTo(dstVersioned.asFile, overwrite = true)
+            srcFile.copyTo(dstLatest.asFile, overwrite = true)
+        }
+    }
 }
 
 tasks.matching { it.name == "assembleDebug" }.configureEach { finalizedBy(syncDebugApk) }
