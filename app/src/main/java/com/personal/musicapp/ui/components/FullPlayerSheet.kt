@@ -70,6 +70,10 @@ import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import com.personal.musicapp.player.PlaybackMode
 import com.personal.musicapp.player.PlayerState
+import com.personal.musicapp.ui.theme.InkBlack
+import com.personal.musicapp.ui.theme.RosePrimary
+import com.personal.musicapp.ui.theme.SlateDark
+import com.personal.musicapp.ui.theme.SlateMuted
 import com.personal.musicapp.ui.util.FormatUtils
 
 @Composable
@@ -255,7 +259,10 @@ fun FullPlayerDialog(
                 ) {
                     Text(
                         text = song.title,
-                        style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
+                        style = MaterialTheme.typography.headlineSmall.copy(
+                            fontWeight = FontWeight.Bold,
+                            color = InkBlack
+                        ),
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                         textAlign = TextAlign.Center
@@ -263,7 +270,7 @@ fun FullPlayerDialog(
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
                         text = song.artist,
-                        style = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                        style = MaterialTheme.typography.bodyLarge.copy(color = SlateDark),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         textAlign = TextAlign.Center
@@ -288,7 +295,7 @@ fun FullPlayerDialog(
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
                             text = "正在缓冲解析中...",
-                            style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.primary),
+                            style = MaterialTheme.typography.bodySmall.copy(color = RosePrimary),
                             textAlign = TextAlign.Center
                         )
                     }
@@ -322,9 +329,9 @@ fun FullPlayerDialog(
                             }
                         },
                         colors = SliderDefaults.colors(
-                            thumbColor = MaterialTheme.colorScheme.primary,
-                            activeTrackColor = MaterialTheme.colorScheme.primary,
-                            inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant
+                            thumbColor = RosePrimary,
+                            activeTrackColor = RosePrimary,
+                            inactiveTrackColor = Color(0xFFE5E7EB)
                         ),
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -335,11 +342,17 @@ fun FullPlayerDialog(
                     ) {
                         Text(
                             text = FormatUtils.formatDuration(currentPos),
-                            style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                color = SlateDark,
+                                fontWeight = FontWeight.Medium
+                            )
                         )
                         Text(
                             text = FormatUtils.formatDuration(playerState.durationMs),
-                            style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                color = SlateMuted,
+                                fontWeight = FontWeight.Medium
+                            )
                         )
                     }
                 }
@@ -364,7 +377,7 @@ fun FullPlayerDialog(
                         Icon(
                             imageVector = icon,
                             contentDescription = "切换播放模式",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            tint = SlateDark,
                             modifier = Modifier.size(28.dp)
                         )
                     }
@@ -374,29 +387,31 @@ fun FullPlayerDialog(
                         Icon(
                             imageVector = Icons.Default.SkipPrevious,
                             contentDescription = "上一首",
+                            tint = InkBlack,
                             modifier = Modifier.size(38.dp)
                         )
                     }
 
-                    // Large Center Play/Pause button
+                    // Flat Center Play/Pause button
                     FilledIconButton(
                         onClick = onTogglePlay,
                         modifier = Modifier.size(72.dp),
                         colors = IconButtonDefaults.filledIconButtonColors(
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor = MaterialTheme.colorScheme.onPrimary
+                            containerColor = RosePrimary,
+                            contentColor = Color.White
                         )
                     ) {
                         if (playerState.isBuffering) {
                             CircularProgressIndicator(
                                 modifier = Modifier.size(32.dp),
-                                color = MaterialTheme.colorScheme.onPrimary,
+                                color = Color.White,
                                 strokeWidth = 3.dp
                             )
                         } else {
                             Icon(
                                 imageVector = if (playerState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                                 contentDescription = if (playerState.isPlaying) "暂停" else "播放",
+                                tint = Color.White,
                                 modifier = Modifier.size(38.dp)
                             )
                         }
@@ -407,6 +422,7 @@ fun FullPlayerDialog(
                         Icon(
                             imageVector = Icons.Default.SkipNext,
                             contentDescription = "下一首",
+                            tint = InkBlack,
                             modifier = Modifier.size(38.dp)
                         )
                     }
@@ -416,7 +432,7 @@ fun FullPlayerDialog(
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.QueueMusic,
                             contentDescription = "播放队列",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            tint = SlateDark,
                             modifier = Modifier.size(28.dp)
                         )
                     }

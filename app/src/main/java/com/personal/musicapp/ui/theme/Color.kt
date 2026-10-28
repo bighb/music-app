@@ -2,15 +2,21 @@ package com.personal.musicapp.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-val Purple80 = Color(0xFFD0BCFF)
-val PurpleGrey80 = Color(0xFFCCC2DC)
-val Pink80 = Color(0xFFEFB8C8)
+val RosePrimary = Color(0xFFF43F5E) // 淡红玫瑰
+val RoseHover = Color(0xFFFB7185)
+val RoseActive = Color(0xFFE11D48)
+val RoseTint = Color(0x14F43F5E) // 8% opacity tint
 
-val Purple40 = Color(0xFF6650a4)
-val PurpleGrey40 = Color(0xFF625b71)
-val Pink40 = Color(0xFF7D5260)
+val InkBlack = Color(0xFF111827)
+val SlateDark = Color(0xFF374151)
+val SlateMuted = Color(0xFF4B5563)
+val BorderLight = Color(0xFFE5E7EB)
 
+val BackgroundLight = Color(0xFFF8F9FB)
+val SurfaceLight = Color(0xFFFFFFFF)
+val SurfaceVariantLight = Color(0xFFF1F3F6)
+
+// Dark fallback
 val DarkSurface = Color(0xFF141218)
 val DarkSurfaceVariant = Color(0xFF211F26)
-val AccentColor = Color(0xFFFF2D55) // Vibrant Douyin-like accent
-val AccentPurple = Color(0xFF8A2BE2)
+val AccentColor = RosePrimary

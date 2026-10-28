@@ -1,6 +1,8 @@
 package com.personal.musicapp.ui.components
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -44,6 +46,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.personal.musicapp.data.model.Song
+import com.personal.musicapp.ui.theme.InkBlack
+import com.personal.musicapp.ui.theme.RosePrimary
+import com.personal.musicapp.ui.theme.RoseTint
+import com.personal.musicapp.ui.theme.SlateDark
+import com.personal.musicapp.ui.theme.SlateMuted
 import com.personal.musicapp.ui.util.FormatUtils
 
 @Composable
@@ -67,15 +74,20 @@ fun SongListItem(
 
     val containerBg = when {
         hasError -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f)
-        isPlaying -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
+        isPlaying -> RoseTint
         else -> Color.Transparent
     }
+
+    val activeBorder = if (isPlaying) {
+        Modifier.border(BorderStroke(1.dp, RosePrimary.copy(alpha = 0.35f)), RoundedCornerShape(12.dp))
+    } else Modifier
 
     Row(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .background(containerBg)
+            .then(activeBorder)
             .clickable(onClick = onClick)
             .padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -115,7 +127,7 @@ fun SongListItem(
                         fontWeight = if (isPlaying) FontWeight.Bold else FontWeight.Medium,
                         color = when {
                             hasError -> MaterialTheme.colorScheme.error
-                            isPlaying -> MaterialTheme.colorScheme.primary
+                            isPlaying -> InkBlack
                             else -> MaterialTheme.colorScheme.onSurface
                         }
                     ),
@@ -129,14 +141,14 @@ fun SongListItem(
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(4.dp))
-                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                            .background(if (isPlaying) RosePrimary.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceVariant)
                             .padding(horizontal = 4.dp, vertical = 1.dp)
                     ) {
                         Text(
                             text = song.source,
                             style = MaterialTheme.typography.labelSmall.copy(
                                 fontSize = 9.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = if (isPlaying) RosePrimary else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         )
                     }
@@ -147,7 +159,7 @@ fun SongListItem(
                     Icon(
                         imageVector = Icons.Filled.Favorite,
                         contentDescription = "已收藏",
-                        tint = Color(0xFFFF2D55),
+                        tint = RosePrimary,
                         modifier = Modifier.size(13.dp)
                     )
                 }
@@ -169,7 +181,7 @@ fun SongListItem(
                     Text(
                         text = "正在缓冲解析...",
                         style = MaterialTheme.typography.bodySmall.copy(
-                            color = MaterialTheme.colorScheme.primary,
+                            color = RosePrimary,
                             fontSize = 11.sp
                         )
                     )
@@ -187,7 +199,7 @@ fun SongListItem(
                     Text(
                         text = song.artist,
                         style = MaterialTheme.typography.bodySmall.copy(
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = if (isPlaying) RosePrimary else SlateDark
                         ),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -198,7 +210,7 @@ fun SongListItem(
                         Text(
                             text = " • " + FormatUtils.formatDuration(song.durationMs),
                             style = MaterialTheme.typography.bodySmall.copy(
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                color = SlateMuted,
                                 fontSize = 11.sp
                             )
                         )

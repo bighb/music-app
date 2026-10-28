@@ -98,7 +98,6 @@ fun MainScreen(
         val query = queryToSearch.trim()
         if (query.isEmpty()) return
 
-        // Save to search history
         localRepo.addSearchQuery(query)
 
         if (sourceManager.findSourceForLink(query) != null || query.contains("http://") || query.contains("https://")) {
@@ -109,22 +108,62 @@ fun MainScreen(
         isLoading = true
         hasSearched = true
         errorMessage = null
-        AppLogger.i("MainScreen", "Searching: $query")
+        AppLogger.i("MainScreen", "Searching 3-tier weighted: $query")
         coroutineScope.launch {
             try {
-                val results = sourceManager.search(query)
+                // Priority 1: Local offline downloads matching query
+                val localDownloadsMatches = localRepo.downloads.value.filter {
+                    it.title.contains(query, ignoreCase = true) || it.artist.contains(query, ignoreCase = true)
+                }
+
+                // Priority 2: Play history matching query (excluding already matched downloads)
+                val existingIds = localDownloadsMatches.map { it.id }.toSet()
+                val playHistoryMatches = localRepo.playHistory.value.filter {
+                    (it.title.contains(query, ignoreCase = true) || it.artist.contains(query, ignoreCase = true)) &&
+                            it.id !in existingIds
+                }
+
+                // Priority 3: Online multi-source search (Douyin, Kuwo, NetMusic)
+                val onlineResults = try {
+                    sourceManager.search(query)
+                } catch (e: Exception) {
+                    AppLogger.w("MainScreen", "Online search network issue, using local matches", e)
+                    emptyList()
+                }
+
+                // Deduplicate online results against local matches
+                val allKnownIds = (localDownloadsMatches.map { it.id } + playHistoryMatches.map { it.id }).toMutableSet()
+                val uniqueOnline = onlineResults.filter { onlineSong ->
+                    val isDuplicate = allKnownIds.contains(onlineSong.id) ||
+                            localDownloadsMatches.any { it.title.equals(onlineSong.title, ignoreCase = true) && it.artist.equals(onlineSong.artist, ignoreCase = true) }
+                    if (!isDuplicate) {
+                        allKnownIds.add(onlineSong.id)
+                        true
+                    } else false
+                }
+
+                val finalResults = localDownloadsMatches + playHistoryMatches + uniqueOnline
                 isLoading = false
-                if (results.isEmpty()) {
+
+                if (finalResults.isEmpty()) {
                     errorMessage = "未找到与 \"$query\" 相关的音频，请尝试其他关键词"
                     AppLogger.w("MainScreen", "No search results for: $query")
                 } else {
-                    searchResults = results
-                    AppLogger.i("MainScreen", "Found ${results.size} results for: $query")
+                    searchResults = finalResults
+                    AppLogger.i("MainScreen", "Found ${finalResults.size} results (downloads=${localDownloadsMatches.size}, history=${playHistoryMatches.size}, online=${uniqueOnline.size}) for: $query")
                 }
             } catch (e: Exception) {
                 isLoading = false
-                errorMessage = "搜索失败: ${e.localizedMessage ?: "网络错误"}"
-                AppLogger.e("MainScreen", "Search error for $query", e)
+                val localFallback = localRepo.downloads.value.filter {
+                    it.title.contains(query, ignoreCase = true) || it.artist.contains(query, ignoreCase = true)
+                }
+                if (localFallback.isNotEmpty()) {
+                    searchResults = localFallback
+                    AppLogger.i("MainScreen", "Fallback to local downloads due to error: ${localFallback.size}")
+                } else {
+                    errorMessage = "搜索失败: ${e.localizedMessage ?: "网络错误"}"
+                    AppLogger.e("MainScreen", "Search error for $query", e)
+                }
             }
         }
     }
@@ -205,13 +244,13 @@ fun MainScreen(
                         selected = selectedTab == 0,
                         onClick = { selectedTab = 0 },
                         icon = { Icon(Icons.Default.Explore, contentDescription = "发现") },
-                        label = { Text("发现与搜索") }
+                        label = { Text("发现") }
                     )
                     NavigationBarItem(
                         selected = selectedTab == 1,
                         onClick = { selectedTab = 1 },
-                        icon = { Icon(Icons.Default.Favorite, contentDescription = "音乐库") },
-                        label = { Text("音乐库") }
+                        icon = { Icon(Icons.Default.Favorite, contentDescription = "我的") },
+                        label = { Text("我的") }
                     )
                 }
             }
@@ -422,7 +461,9 @@ fun MainScreen(
                 }
             },
             onReorderQueue = { from, to ->
-                playerManager.reorderPlaylist(from, to)
+                if (from > 0 && to > 0) {
+                    playerManager.reorderPlaylist(from, to)
+                }
             },
             onClearQueue = {
                 playerManager.clearPlaylist()

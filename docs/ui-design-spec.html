@@ -1,0 +1,3251 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MusicApp · 沉稳饱满设计规范与边界状态原型</title>
+  <style>
+    :root, [data-theme="light"] {
+      /* Crisp, Modern, High-Contrast Light Theme with Soft Rose Red Accent */
+      --bg-app: #F8F9FB;
+      --bg-surface: #FFFFFF;
+      --bg-card: #FFFFFF;
+      --bg-subtle: #F1F3F6;
+      --bg-hover: #E8ECF2;
+      --border-subtle: rgba(0, 0, 0, 0.08);
+      --border-focus: #F43F5E;
+
+      /* Primary Punchy Accent: Soft Rose Red (淡红) */
+      --accent: #F43F5E;
+      --accent-hover: #FB7185;
+      --accent-active: #E11D48;
+      --accent-tint: rgba(244, 63, 94, 0.08);
+      --accent-tint-strong: rgba(244, 63, 94, 0.16);
+
+      /* Functional Semantic Colors */
+      --color-favorite: #F43F5E;
+      --color-offline: #059669;
+      --color-error: #DC2626;
+      --color-error-tint: rgba(220, 38, 38, 0.08);
+      --color-warning: #D97706;
+      --color-warning-tint: rgba(217, 119, 6, 0.08);
+
+      /* Crisp High-Contrast Typography (100% Readable) */
+      --text-primary: #111827;       /* Deep Ink Black: Maximum readability */
+      --text-secondary: #374151;     /* Slate Dark Gray: 100% crisp */
+      --text-muted: #4B5563;         /* Neutral Gray: sharp and clear */
+      --text-faint: #9CA3AF;
+
+      /* Soft Clean Shadows & Elevations */
+      --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.04);
+      --shadow-accent: 0 4px 14px rgba(244, 63, 94, 0.28);
+      --shadow-vinyl: 0 18px 45px rgba(0, 0, 0, 0.16), 0 0 25px rgba(244, 63, 94, 0.10);
+      --shadow-floating-dock: 0 12px 30px -4px rgba(0, 0, 0, 0.10), 0 4px 16px rgba(244, 63, 94, 0.10);
+      --shadow-active-track: 0 4px 14px rgba(244, 63, 94, 0.10), 0 1px 3px rgba(0, 0, 0, 0.04);
+      --shadow-modal: 0 20px 50px rgba(0, 0, 0, 0.15);
+
+      /* Radius Tokens */
+      --radius-sm: 8px;
+      --radius-md: 12px;
+      --radius-lg: 18px;
+      --radius-full: 9999px;
+    }
+
+    [data-theme="dark"] {
+      --bg-app: #0C0A12;
+      --bg-surface: #14121D;
+      --bg-card: #1B1826;
+      --bg-subtle: #242033;
+      --bg-hover: #2C283E;
+      --border-subtle: rgba(255, 255, 255, 0.08);
+      --border-focus: #7C3AED;
+      --text-primary: #FFFFFF;
+      --text-secondary: #9CA3AF;
+      --text-muted: #6B7280;
+      --text-faint: #4B5563;
+      --shadow-floating-dock: 0 14px 34px -4px rgba(0, 0, 0, 0.88), 0 6px 20px rgba(124, 58, 237, 0.32);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-font-smoothing: antialiased;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      background-color: var(--bg-app);
+      color: var(--text-primary);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+      transition: background-color 0.2s ease, color 0.2s ease;
+    }
+
+    /* Top Global Header */
+    .app-toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 28px;
+      background: var(--bg-surface);
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .brand-meta {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .brand-logo-pill {
+      width: 32px;
+      height: 32px;
+      border-radius: var(--radius-sm);
+      background: var(--accent);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: var(--shadow-accent);
+    }
+    .brand-title-wrap h1 {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text-primary);
+      letter-spacing: -0.2px;
+    }
+    .brand-title-wrap span {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .toolbar-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    /* Edge Case Simulator Control */
+    .simulator-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-right: 2px;
+    }
+    .segmented-control {
+      display: flex;
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-full);
+      padding: 3px;
+    }
+    .seg-pill-btn {
+      border: none;
+      background: transparent;
+      color: var(--text-secondary);
+      padding: 5px 12px;
+      border-radius: var(--radius-full);
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .seg-pill-btn.active {
+      background: var(--accent);
+      color: #fff;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .btn-tool-link {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-primary);
+      height: 32px;
+      padding: 0 12px;
+      border-radius: var(--radius-full);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s ease;
+    }
+    .btn-tool-link:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    /* Main Container Views */
+    .workspace-wrap {
+      display: flex;
+      flex: 1;
+      width: 100%;
+      max-width: 1540px;
+      margin: 0 auto;
+      padding: 24px 28px;
+      gap: 40px;
+    }
+
+    /* Left Pane: Spec Docs */
+    .spec-pane {
+      flex: 1;
+      min-width: 440px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+    .spec-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: 22px;
+      box-shadow: var(--shadow-sm);
+    }
+    .spec-card-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .spec-card-title span {
+      font-size: 11px;
+      font-weight: 400;
+      color: var(--text-muted);
+    }
+
+    /* Edge Case Spec Table */
+    .spec-table-clean {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+    .spec-table-clean th {
+      text-align: left;
+      padding-bottom: 8px;
+      color: var(--text-muted);
+      font-weight: 600;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .spec-table-clean td {
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border-subtle);
+      color: var(--text-primary);
+      vertical-align: top;
+    }
+
+    /* Swatch Grid */
+    .swatch-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+      gap: 10px;
+    }
+    .swatch-box-item {
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      overflow: hidden;
+      background: var(--bg-card);
+      cursor: pointer;
+      transition: transform 0.15s ease;
+    }
+    .swatch-box-item:hover {
+      transform: translateY(-2px);
+    }
+    .swatch-visual {
+      height: 44px;
+      width: 100%;
+    }
+    .swatch-meta-text {
+      padding: 6px 8px;
+    }
+    .swatch-name {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+    .swatch-val {
+      font-size: 10px;
+      color: var(--text-muted);
+      font-family: monospace;
+    }
+
+    /* Right Pane: Phone Chassis */
+    .device-pane {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      position: sticky;
+      top: 80px;
+      height: calc(100vh - 110px);
+    }
+
+    /* ========================================================
+       CLEAN HIGH-FIDELITY MOBILE SHELL
+       ======================================================== */
+    .phone-body {
+      width: 384px;
+      height: 804px;
+      background: #000;
+      border-radius: 46px;
+      padding: 10px;
+      box-shadow: 0 24px 64px -12px rgba(0,0,0,0.8), 0 0 0 1px rgba(255,255,255,0.08);
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      user-select: none;
+    }
+    .phone-glass-screen {
+      flex: 1;
+      background: var(--bg-app);
+      border-radius: 38px;
+      overflow: hidden;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Phone Status Bar */
+    .phone-top-status {
+      height: 38px;
+      padding: 0 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-primary);
+      z-index: 50;
+      position: relative;
+    }
+    .punch-hole-cam {
+      position: absolute;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 11px;
+      height: 11px;
+      background: #000;
+      border-radius: 50%;
+      z-index: 60;
+    }
+    .status-icons-box {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* Scrollable Viewport */
+    .screen-scroll-wrap {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+      scrollbar-width: none;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+    .screen-scroll-wrap::-webkit-scrollbar {
+      display: none;
+    }
+
+    /* Views */
+    .screen-page {
+      display: none;
+      flex-direction: column;
+      padding: 8px 16px 114px 16px;
+      gap: 12px;
+      animation: pageEntrance 0.2s ease-out;
+    }
+    .screen-page.active {
+      display: flex;
+    }
+    @keyframes pageEntrance {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Search Box (Clean, Silent - No Toast on Search) */
+    .search-box-clean {
+      display: flex;
+      align-items: center;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: 0 12px;
+      height: 44px;
+      gap: 10px;
+      transition: border-color 0.15s ease;
+    }
+    .search-box-clean:focus-within {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--accent-tint);
+    }
+    .search-txt-input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      outline: none;
+      color: var(--text-primary);
+      font-size: 14px;
+    }
+    .search-txt-input::placeholder {
+      color: var(--text-muted);
+    }
+    .btn-search-clear {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      display: none;
+      padding: 4px;
+    }
+    .btn-search-clear.active {
+      display: block;
+    }
+
+    /* ========================================================
+       NETWORK STATUS BANNERS & EDGE INDICATORS
+       ======================================================== */
+    /* 1. Offline Mode Subtle Strip */
+    .offline-status-strip {
+      display: none;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 12px;
+      border-radius: var(--radius-md);
+      background: var(--color-warning-tint);
+      border: 1px solid rgba(245, 158, 11, 0.25);
+      color: var(--color-warning);
+      font-size: 12px;
+      font-weight: 500;
+      animation: pageEntrance 0.2s ease;
+    }
+    .offline-status-strip.visible {
+      display: flex;
+    }
+    .offline-strip-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .btn-retry-network {
+      background: none;
+      border: none;
+      color: var(--color-warning);
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      text-decoration: underline;
+      padding: 2px 4px;
+    }
+
+    /* 2. Network Error State Card */
+    .network-error-state {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 48px 16px;
+      gap: 12px;
+    }
+    .network-error-state.visible {
+      display: flex;
+    }
+    .net-err-icon-box {
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      background: var(--color-error-tint);
+      color: var(--color-error);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .net-err-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+    .net-err-desc {
+      font-size: 12px;
+      color: var(--text-muted);
+      max-width: 240px;
+      line-height: 1.5;
+    }
+    .btn-net-retry {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: var(--radius-md);
+      padding: 8px 18px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 4px;
+    }
+
+    /* 3. Empty Search Result State */
+    .empty-search-state {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 56px 16px;
+      gap: 10px;
+    }
+    .empty-search-state.visible {
+      display: flex;
+    }
+    .empty-icon-box {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .empty-search-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+    .empty-search-desc {
+      font-size: 12px;
+      color: var(--text-muted);
+      max-width: 220px;
+      line-height: 1.5;
+    }
+    .btn-clear-search-keyword {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-secondary);
+      border-radius: var(--radius-md);
+      padding: 6px 16px;
+      font-size: 12px;
+      cursor: pointer;
+      margin-top: 6px;
+      transition: all 0.15s ease;
+    }
+    .btn-clear-search-keyword:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    /* 4. Loading / Buffering State */
+    .loading-buffering-state {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 56px 16px;
+      gap: 12px;
+      color: var(--text-muted);
+      font-size: 12px;
+    }
+    .loading-buffering-state.visible {
+      display: flex;
+    }
+    .loading-spinner-ring {
+      width: 24px;
+      height: 24px;
+      border: 2px solid var(--border-subtle);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spinSpinner 0.8s linear infinite;
+    }
+    @keyframes spinSpinner {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+
+    /* Search History Flow */
+    .history-row-clean {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .history-pills-wrap {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+      flex: 1;
+    }
+    .history-pill {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 4px 10px;
+      font-size: 11px;
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+    }
+    .history-pill:hover {
+      background: var(--bg-hover);
+      color: var(--text-primary);
+    }
+    .btn-history-clear-icon {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      padding: 6px;
+      border-radius: var(--radius-sm);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: color 0.15s;
+    }
+    .btn-history-clear-icon:hover {
+      color: var(--text-primary);
+    }
+
+    /* Unified Song List Items */
+    .pure-song-list {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .song-list-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 10px;
+      border-radius: var(--radius-md);
+      background: transparent;
+      cursor: pointer;
+      transition: background 0.15s ease;
+      position: relative;
+    }
+    .song-list-row:hover {
+      background: var(--bg-hover);
+    }
+    .song-list-row.is-active {
+      background: rgba(244, 63, 94, 0.07);
+      border-left: 3px solid var(--accent);
+      border: 1px solid rgba(244, 63, 94, 0.22);
+      border-radius: var(--radius-sm);
+      box-shadow: var(--shadow-active-track);
+      transform: translateY(-1px);
+    }
+    .song-list-row.is-active .song-title-line {
+      color: #111827;
+      font-weight: 700;
+    }
+    .song-list-row.is-active .song-sub-info-line {
+      color: var(--accent);
+      font-weight: 600;
+    }
+    .song-list-row.is-offline-disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+    .song-cover-thumb {
+      width: 44px;
+      height: 44px;
+      border-radius: var(--radius-sm);
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      color: var(--text-muted);
+    }
+    .song-list-row.is-active .song-cover-thumb {
+      color: var(--accent);
+      border-color: var(--accent);
+    }
+    .song-meta-wrap {
+      flex: 1;
+      min-width: 0;
+    }
+    .song-title-line {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text-primary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .song-list-row.is-active .song-title-line {
+      color: var(--accent);
+      font-weight: 600;
+    }
+    .icon-offline-indicator {
+      color: var(--color-offline);
+      display: inline-flex;
+      font-size: 11px;
+    }
+    .song-sub-info-line {
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-top: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .song-row-action-btn {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      padding: 6px;
+      border-radius: var(--radius-sm);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .song-row-action-btn:hover {
+      color: var(--text-primary);
+    }
+
+    /* Equalizer Wave */
+    .clean-eq-wave {
+      display: flex;
+      align-items: flex-end;
+      gap: 2.5px;
+      height: 14px;
+      padding-right: 2px;
+    }
+    .eq-bar-stick {
+      width: 2.5px;
+      border-radius: 2px;
+      background: var(--accent);
+      animation: eqBouncePure 1s infinite ease-in-out;
+    }
+    .eq-bar-stick:nth-child(1) { height: 6px; animation-delay: 0.1s; }
+    .eq-bar-stick:nth-child(2) { height: 13px; animation-delay: 0.3s; }
+    .eq-bar-stick:nth-child(3) { height: 8px; animation-delay: 0.2s; }
+    @keyframes eqBouncePure {
+      0%, 100% { height: 4px; }
+      50% { height: 14px; }
+    }
+
+    /* "Me" Tab Segmented View */
+    .profile-tabs-wrap {
+      display: flex;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 3px;
+      margin-bottom: 12px;
+    }
+    .profile-tabs-wrap.has-gesture-hint::after {
+      content: '⇄ 可左右滑动手势切页';
+      position: absolute;
+      right: 0;
+      top: -18px;
+      font-size: 10px;
+      color: var(--text-muted);
+    }
+    .me-pager-container {
+      overflow: hidden;
+      width: 100%;
+      position: relative;
+      touch-action: pan-y;
+      user-select: none;
+      cursor: grab;
+    }
+    .me-pager-container:active {
+      cursor: grabbing;
+    }
+    .me-pager-track {
+      display: flex;
+      width: 300%;
+      transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+      will-change: transform;
+    }
+    .me-pager-panel {
+      width: 33.333333%;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      box-sizing: border-box;
+      padding: 0 2px;
+    }
+    .profile-sub-tab {
+      flex: 1;
+      background: none;
+      border: none;
+      color: var(--text-secondary);
+      font-size: 12px;
+      font-weight: 500;
+      padding: 8px 0;
+      cursor: pointer;
+      border-radius: 6px;
+      transition: all 0.15s;
+    }
+    .profile-sub-tab.active {
+      background: var(--bg-card);
+      color: var(--text-primary);
+      font-weight: 600;
+    }
+
+    /* Bottom Developer Trigger */
+    .profile-dev-footer {
+      margin-top: auto;
+      padding: 24px 0 10px 0;
+      text-align: center;
+    }
+    .btn-dev-trigger {
+      background: none;
+      border: none;
+      font-size: 11px;
+      color: var(--text-faint);
+      cursor: pointer;
+      transition: color 0.2s;
+    }
+    .btn-dev-trigger:hover {
+      color: var(--text-secondary);
+    }
+
+    /* --------------------------------------------------------
+       KUGOU MUSIC ICONIC PLAYBACK STYLE SPEC
+       -------------------------------------------------------- */
+    /* 1. Kugou Breaking-out Mini Player Bar */
+    .mini-player-bar, .kugou-mini-bar {
+      position: absolute;
+      bottom: 64px;
+      left: 10px;
+      right: 10px;
+      height: 54px;
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(28px);
+      -webkit-backdrop-filter: blur(28px);
+      border: 1px solid rgba(0, 0, 0, 0.08);
+      border-radius: 27px;
+      z-index: 40;
+      cursor: pointer;
+      box-shadow: 0 12px 30px -4px rgba(0, 0, 0, 0.12),
+                  0 4px 16px rgba(124, 58, 237, 0.12);
+      transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s;
+    }
+    .kugou-mini-bar:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 16px 38px -4px rgba(0, 0, 0, 0.16),
+                  0 6px 20px rgba(124, 58, 237, 0.18);
+    }
+    .kugou-mini-content {
+      position: relative;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      padding: 0 10px 0 6px;
+      gap: 10px;
+    }
+    /* Breaking-out vinyl disc */
+    .kugou-mini-vinyl-wrapper {
+      position: relative;
+      width: 48px;
+      height: 48px;
+      margin-top: -12px;
+      flex-shrink: 0;
+    }
+    .kugou-mini-vinyl-disc {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: radial-gradient(circle, #2a2836 0%, #100f16 65%, #050408 100%);
+      border: 2px solid rgba(255, 255, 255, 0.2);
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.75), 0 0 14px rgba(124, 58, 237, 0.35);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+    }
+    .kugou-mini-vinyl-disc.is-rotating {
+      animation: spinVinyl 14s linear infinite;
+    }
+    .kugou-mini-grooves {
+      position: absolute;
+      inset: 4px;
+      border-radius: 50%;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      pointer-events: none;
+    }
+    .kugou-mini-cover {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 6px rgba(0,0,0,0.5);
+    }
+    .kugou-mini-meta-box {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .kugou-mini-title-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .kugou-mini-title {
+      font-size: 13.5px;
+      font-weight: 700;
+      color: #111827; /* 100% visible Ink Black */
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .kugou-mini-artist {
+      font-size: 11px;
+      color: #4B5563; /* 100% visible Slate Dark Gray */
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .kugou-hires-badge {
+      font-size: 8.5px;
+      font-weight: 800;
+      letter-spacing: 0.3px;
+      color: #1a1505;
+      background: linear-gradient(135deg, #FFDF70 0%, #F5A623 100%);
+      padding: 0 4px;
+      border-radius: 3px;
+      flex-shrink: 0;
+      line-height: 14px;
+      height: 14px;
+      display: inline-flex;
+      align-items: center;
+      box-shadow: 0 1px 4px rgba(245, 166, 35, 0.4);
+    }
+    .kugou-mini-artist {
+      font-size: 11px;
+      color: var(--text-secondary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .kugou-mini-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+    .kugou-circle-play-btn {
+      position: relative;
+      width: 36px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+    .kugou-ring-svg {
+      position: absolute;
+      top: 0;
+      left: 0;
+      transform: rotate(-90deg);
+    }
+    .kugou-circle-play-icon {
+      position: relative;
+      z-index: 2;
+      color: var(--accent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.15s;
+    }
+    .kugou-circle-play-btn:active .kugou-circle-play-icon {
+      transform: scale(0.88);
+    }
+    .kugou-mini-btn {
+      background: none;
+      border: none;
+      color: #4B5563;
+      cursor: pointer;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: color 0.15s;
+    }
+    .kugou-mini-btn:hover {
+      color: #111827;
+    }
+
+    /* 2. Fullscreen Kugou Dazzling Vinyl & Ambient Flow Background */
+    .kugou-player-bg-glow {
+      position: absolute;
+      inset: -50px;
+      overflow: hidden;
+      z-index: 0;
+      pointer-events: none;
+    }
+    .kugou-glow-blob1 {
+      position: absolute;
+      top: 15%;
+      left: 15%;
+      width: 280px;
+      height: 280px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(254, 205, 211, 0.75) 0%, rgba(255, 228, 230, 0.4) 50%, transparent 75%);
+      filter: blur(48px);
+      animation: kugouAmbientBlob 10s ease-in-out infinite alternate;
+    }
+    .kugou-glow-blob2 {
+      position: absolute;
+      top: 35%;
+      right: 15%;
+      width: 240px;
+      height: 240px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(254, 226, 226, 0.6) 0%, rgba(255, 241, 242, 0.3) 50%, transparent 75%);
+      filter: blur(52px);
+      animation: kugouAmbientBlob 8s ease-in-out infinite alternate-reverse;
+    }
+    .kugou-vignette-mask {
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle at 50% 40%, rgba(255, 255, 255, 0.2) 0%, rgba(248, 249, 251, 0.96) 85%);
+    }
+    @keyframes kugouAmbientBlob {
+      0% { transform: scale(1) translate(0, 0); }
+      50% { transform: scale(1.15) translate(-15px, 20px); }
+      100% { transform: scale(0.95) translate(15px, -15px); }
+    }
+    .kugou-viper-badge {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--accent);
+      background: rgba(244, 63, 94, 0.08);
+      border: 1px solid rgba(244, 63, 94, 0.25);
+      padding: 2px 10px;
+      border-radius: 12px;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .kugou-viper-badge::before {
+      content: '●';
+      font-size: 7px;
+      color: var(--accent);
+    }
+    .mini-player-bar {
+      position: absolute;
+      bottom: 64px;
+      left: 10px;
+      right: 10px;
+      background: rgba(22, 19, 32, 0.96);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border: 1px solid rgba(124, 58, 237, 0.35);
+      border-radius: 16px;
+      display: flex;
+      flex-direction: column;
+      z-index: 40;
+      cursor: pointer;
+      overflow: hidden;
+      box-shadow: var(--shadow-floating-dock);
+      transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease;
+    }
+    .mini-player-bar:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 18px 42px -4px rgba(0, 0, 0, 0.92), 0 8px 26px rgba(124, 58, 237, 0.42), inset 0 1px 1px rgba(255, 255, 255, 0.24);
+    }
+    .mini-progress-line {
+      height: 2px;
+      width: 100%;
+      background: var(--border-subtle);
+      position: relative;
+    }
+    .mini-progress-fill {
+      height: 100%;
+      width: 42%;
+      background: var(--accent);
+      transition: width 0.3s linear;
+    }
+    .mini-bar-content {
+      display: flex;
+      align-items: center;
+      padding: 7px 12px;
+      gap: 10px;
+    }
+    .mini-disc-thumb {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: #090909;
+      border: 1px solid #262432;
+      position: relative;
+      overflow: hidden;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--accent);
+    }
+    .mini-disc-thumb.is-rotating {
+      animation: spinVinyl 14s linear infinite;
+    }
+    @keyframes spinVinyl {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    .mini-meta-box {
+      flex: 1;
+      min-width: 0;
+    }
+    .mini-title-text {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-primary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .mini-artist-text {
+      font-size: 11px;
+      color: var(--text-secondary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .mini-actions-group {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .btn-mini-ctrl {
+      background: none;
+      border: none;
+      color: var(--text-primary);
+      cursor: pointer;
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* Bottom 2-Tab Navigation */
+    .bottom-nav-bar {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 56px;
+      background: var(--bg-surface);
+      border-top: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: space-around;
+      z-index: 35;
+    }
+    .nav-tab-item {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: 500;
+      gap: 3px;
+      transition: color 0.15s;
+    }
+    .nav-tab-item.active {
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    /* Gesture Line */
+    .system-gesture-pill {
+      position: absolute;
+      bottom: 4px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 80px;
+      height: 3.5px;
+      background: var(--text-faint);
+      border-radius: 4px;
+      z-index: 55;
+    }
+
+    /* ========================================================
+       FULLSCREEN PLAYBACK PAGE (NOW PLAYING SCREEN)
+       ======================================================== */
+    .now-playing-fullscreen {
+      position: absolute;
+      inset: 0;
+      background: #F8F7FC;
+      z-index: 80;
+      display: flex;
+      flex-direction: column;
+      padding: 40px 24px 20px 24px;
+      transform: translateY(100%);
+      transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+      overflow: hidden;
+    }
+    .now-playing-fullscreen.open {
+      transform: translateY(0);
+    }
+
+    .playing-top-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14px;
+      z-index: 20;
+    }
+    .btn-collapse-down {
+      background: none;
+      border: none;
+      color: var(--text-secondary);
+      cursor: pointer;
+      padding: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .playing-source-pill {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 3px 10px;
+      border-radius: var(--radius-full);
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-secondary);
+    }
+    .btn-lyrics-toggle {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-secondary);
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 600;
+      transition: all 0.15s;
+    }
+    .btn-lyrics-toggle.active {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+    }
+
+    /* Vinyl Stage */
+    .vinyl-stage-stage {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+    .tonearm-assembly {
+      position: absolute;
+      top: -10px;
+      right: 44px;
+      width: 80px;
+      height: 140px;
+      transform-origin: 30px 15px;
+      transform: rotate(0deg);
+      transition: transform 0.65s cubic-bezier(0.22, 1, 0.36, 1);
+      z-index: 25;
+      pointer-events: none;
+    }
+    .tonearm-assembly.is-needle-down {
+      transform: rotate(26deg);
+    }
+    .tonearm-pivot {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: radial-gradient(circle, #555 0%, #222 100%);
+      border: 2px solid #777;
+      position: absolute;
+      top: 0;
+      left: 16px;
+    }
+    .tonearm-shaft {
+      position: absolute;
+      top: 14px;
+      left: 28px;
+      width: 3.5px;
+      height: 100px;
+      background: linear-gradient(to right, #ccc, #888);
+      border-radius: 2px;
+      box-shadow: 1px 2px 5px rgba(0,0,0,0.5);
+      transform: rotate(-10deg);
+      transform-origin: top center;
+    }
+    .tonearm-cartridge {
+      position: absolute;
+      bottom: 12px;
+      left: 36px;
+      width: 13px;
+      height: 20px;
+      background: #111;
+      border: 1px solid var(--accent);
+      border-radius: 2px;
+      transform: rotate(-15deg);
+    }
+
+    .vinyl-disc-3d {
+      width: 254px;
+      height: 254px;
+      border-radius: 50%;
+      background: radial-gradient(circle, #25242C 0%, #121118 45%, #08070C 100%);
+      box-shadow: var(--shadow-vinyl);
+      border: 4px solid #1C1A24;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: box-shadow 0.3s ease;
+    }
+    .vinyl-disc-3d.rotating {
+      animation: spinVinyl 18s linear infinite;
+    }
+    .vinyl-disc-3d.paused {
+      animation-play-state: paused;
+    }
+    .groove-outer {
+      position: absolute;
+      width: 216px;
+      height: 216px;
+      border-radius: 50%;
+      border: 1px solid rgba(255, 255, 255, 0.04);
+    }
+    .groove-inner {
+      position: absolute;
+      width: 180px;
+      height: 180px;
+      border-radius: 50%;
+      border: 1px solid rgba(255, 255, 255, 0.03);
+    }
+    .vinyl-album-center {
+      width: 122px;
+      height: 122px;
+      border-radius: 50%;
+      background: var(--bg-card);
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 2px solid #0A090F;
+      position: relative;
+      z-index: 2;
+      color: var(--accent);
+    }
+    .vinyl-center-pin {
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #09090C;
+      border: 2px solid #3A3845;
+      z-index: 3;
+    }
+
+    /* Lyrics Display Stage */
+    .lyrics-stage-display {
+      position: absolute;
+      inset: 20px 0;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      gap: 16px;
+      z-index: 10;
+      animation: pageEntrance 0.25s ease;
+    }
+    .lyrics-stage-display.active {
+      display: flex;
+    }
+    .lyric-line-faint {
+      font-size: 14px;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+    .lyric-line-highlight {
+      font-size: 19px;
+      font-weight: 700;
+      color: var(--text-primary);
+      text-shadow: 0 0 16px var(--accent-tint-strong);
+    }
+
+    /* Track Metadata */
+    .track-info-plate {
+      margin: 14px 0 16px 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .track-title-lead {
+      font-size: 19px;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 4px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .track-artist-sub {
+      font-size: 13px;
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .btn-fav-icon {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      padding: 6px;
+      transition: color 0.15s, transform 0.15s;
+    }
+    .btn-fav-icon.is-favorited {
+      color: var(--color-favorite);
+      transform: scale(1.1);
+    }
+
+    /* Scrubber Track */
+    .scrubber-clean-box {
+      margin-bottom: 22px;
+    }
+    .scrubber-slider-clean {
+      -webkit-appearance: none;
+      width: 100%;
+      height: 4px;
+      border-radius: 2px;
+      background: var(--bg-subtle);
+      outline: none;
+      cursor: pointer;
+    }
+    .scrubber-slider-clean::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: var(--accent);
+      cursor: pointer;
+    }
+    .scrubber-clean-box {
+      position: relative;
+      z-index: 20;
+      margin-bottom: 22px;
+    }
+    .scrubber-slider-clean {
+      -webkit-appearance: none;
+      width: 100%;
+      height: 4px;
+      border-radius: 2px;
+      background: #E5E7EB;
+      outline: none;
+      cursor: pointer;
+    }
+    .scrubber-slider-clean::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--accent);
+      cursor: pointer;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.18);
+    }
+    .scrubber-clock-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      font-weight: 700;
+      color: #374151; /* Dark charcoal - 100% visible */
+      margin-top: 6px;
+      font-family: ui-monospace, SFMono-Regular, monospace;
+    }
+
+    /* Controls Row: High-contrast Dark Buttons + Flat Rose Red Play Button */
+    .playback-controls-row {
+      position: relative;
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 4px 16px 4px;
+    }
+    .btn-ctrl-ghost {
+      background: none;
+      border: none;
+      color: #374151; /* 100% visible dark slate */
+      cursor: pointer;
+      width: 40px;
+      height: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: color 0.15s;
+    }
+    .btn-ctrl-ghost:hover {
+      color: var(--accent);
+    }
+    .btn-ctrl-ghost.active {
+      color: var(--accent);
+    }
+    .btn-step-skip {
+      background: none;
+      border: none;
+      color: #111827; /* 100% visible deep ink black */
+      cursor: pointer;
+      width: 46px;
+      height: 46px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.12s, color 0.12s;
+    }
+    .btn-step-skip:hover {
+      color: var(--accent);
+      transform: scale(1.06);
+    }
+    .btn-step-skip:active {
+      transform: scale(0.94);
+    }
+    /* FLAT PLAY BUTTON - NO 3D, NO INSET BORDER, NO HEAVY GLOW */
+    .btn-main-play-solid {
+      width: 68px;
+      height: 68px;
+      border-radius: 50%;
+      background: var(--accent); /* Flat Soft Rose Red */
+      color: #FFFFFF;
+      border: none;
+      box-shadow: 0 4px 14px rgba(244, 63, 94, 0.28);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.12s ease, background 0.12s ease;
+      position: relative;
+    }
+    .btn-main-play-solid:hover {
+      background: var(--accent-hover);
+      transform: scale(1.04);
+    }
+    .btn-main-play-solid:active {
+      background: var(--accent-active);
+      transform: scale(0.95);
+    }
+
+    /* Queue Bottom Sheet */
+    .queue-scrim-layer {
+      position: absolute;
+      inset: 0;
+      background: rgba(0,0,0,0.65);
+      z-index: 85;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s;
+    }
+    .queue-scrim-layer.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .queue-sheet-drawer {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 68%;
+      background: var(--bg-surface);
+      border-top: 1px solid var(--border-subtle);
+      border-radius: 24px 24px 0 0;
+      z-index: 90;
+      display: flex;
+      flex-direction: column;
+      padding: 12px 18px;
+      transform: translateY(100%);
+      transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      box-shadow: var(--shadow-modal);
+    }
+    .queue-sheet-drawer.open {
+      transform: translateY(0);
+    }
+    .sheet-handle-bar {
+      width: 32px;
+      height: 4px;
+      background: var(--border-subtle);
+      border-radius: 2px;
+      margin: 4px auto 10px auto;
+    }
+    .queue-sheet-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+    .queue-title-bold {
+      font-size: 15px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .queue-section-hint {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+      letter-spacing: 0.3px;
+      margin: 8px 0 4px 2px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .queue-row-card {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 9px 10px;
+      border-radius: var(--radius-sm);
+      background: var(--bg-surface-elevated);
+      border: 1px solid var(--border-subtle);
+      margin-bottom: 4px;
+      transition: background 0.15s, transform 0.15s, border-color 0.15s, box-shadow 0.15s;
+      user-select: none;
+    }
+    .queue-row-card.is-pinned {
+      background: rgba(244, 63, 94, 0.07);
+      border-left: 3px solid var(--accent);
+      border-color: rgba(244, 63, 94, 0.25);
+      box-shadow: 0 2px 8px rgba(244, 63, 94, 0.10);
+    }
+    .queue-row-card.is-pinned .queue-song-title {
+      color: #111827;
+      font-weight: 700;
+    }
+    .queue-row-card.is-draggable {
+      cursor: grab;
+    }
+    .queue-row-card.is-draggable:active {
+      cursor: grabbing;
+    }
+    .queue-row-card.is-dragging {
+      opacity: 0.45;
+      background: var(--bg-hover);
+      border: 1px dashed var(--accent);
+    }
+    .queue-row-card.drag-over {
+      border-top: 2px solid var(--accent);
+    }
+    .queue-col-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+      flex: 1;
+    }
+    .queue-idx-badge {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-variant-numeric: tabular-nums;
+      width: 14px;
+      text-align: center;
+      flex-shrink: 0;
+    }
+    .queue-song-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-main);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .queue-song-sub {
+      font-size: 11px;
+      color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .queue-col-right {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+    .queue-playing-pill {
+      font-size: 10px;
+      color: var(--accent);
+      font-weight: 600;
+      background: rgba(124, 58, 237, 0.16);
+      padding: 2px 6px;
+      border-radius: 4px;
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+    }
+    .queue-drag-grip {
+      color: var(--text-muted);
+      padding: 4px;
+      display: flex;
+      align-items: center;
+      cursor: grab;
+      border-radius: 4px;
+    }
+    .queue-drag-grip:hover {
+      color: var(--text-main);
+      background: var(--bg-hover);
+    }
+
+    /* Diagnostic Log Dialog (One-Click Copy) */
+    .debug-modal-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(0,0,0,0.7);
+      z-index: 110;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+    .debug-modal-overlay.open {
+      display: flex;
+    }
+    .debug-modal-content {
+      width: 100%;
+      height: 84%;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      display: flex;
+      flex-direction: column;
+      padding: 18px;
+      box-shadow: var(--shadow-modal);
+    }
+    .debug-dialog-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    .debug-dialog-title {
+      font-size: 15px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--text-primary);
+    }
+    .debug-version-badge {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: var(--accent-tint);
+      color: var(--accent);
+    }
+    .debug-dialog-desc {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+      line-height: 1.5;
+    }
+    .debug-actions-row {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .btn-copy-all-logs {
+      flex: 1;
+      height: 38px;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: var(--radius-md);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      box-shadow: var(--shadow-accent);
+      transition: background 0.15s ease;
+    }
+    .btn-copy-all-logs:hover {
+      background: var(--accent-hover);
+    }
+    .btn-clear-logs-secondary {
+      height: 38px;
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-secondary);
+      padding: 0 14px;
+      border-radius: var(--radius-md);
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .btn-clear-logs-secondary:hover {
+      color: var(--color-error);
+      border-color: var(--color-error);
+    }
+    .debug-code-box {
+      flex: 1;
+      background: var(--bg-app);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      padding: 12px;
+      font-family: ui-monospace, SFMono-Regular, monospace;
+      font-size: 11px;
+      color: var(--text-secondary);
+      overflow-y: auto;
+      line-height: 1.6;
+    }
+    .log-line-info { color: var(--accent); }
+    .log-line-warn { color: var(--color-warning); }
+    .log-line-error { color: var(--color-error); }
+
+    /* Minimal Toast */
+    .clean-toast {
+      position: absolute;
+      bottom: 74px;
+      left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      background: var(--bg-surface);
+      border: 1px solid var(--accent);
+      color: var(--text-primary);
+      border-radius: var(--radius-full);
+      padding: 6px 16px;
+      font-size: 12px;
+      font-weight: 500;
+      box-shadow: var(--shadow-modal);
+      opacity: 0;
+      pointer-events: none;
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      z-index: 120;
+      white-space: nowrap;
+    }
+    .clean-toast.visible {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    @media (max-width: 1024px) {
+      .workspace-wrap {
+        flex-direction: column-reverse;
+        align-items: center;
+      }
+      .device-pane {
+        position: static;
+        height: auto;
+        margin-bottom: 32px;
+      }
+      .spec-pane {
+        min-width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Global Header -->
+  <header class="app-toolbar">
+    <div class="brand-meta">
+      <div class="brand-logo-pill">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
+      </div>
+      <div class="brand-title-wrap">
+        <h1>MusicApp · 沉稳饱满设计规范与边界状态原型</h1>
+        <span>无弹窗搜索 · 离线/异常/无结果全覆盖</span>
+      </div>
+    </div>
+
+    <div class="toolbar-actions">
+      <!-- Edge Case Simulator Switcher (New!) -->
+      <span class="simulator-label">边界演练:</span>
+      <div class="segmented-control">
+        <button class="seg-pill-btn active" id="btnCaseNormal" onclick="setEdgeState('normal')">正常结果</button>
+        <button class="seg-pill-btn" id="btnCaseEmpty" onclick="setEdgeState('empty')">未搜索到</button>
+        <button class="seg-pill-btn" id="btnCaseOffline" onclick="setEdgeState('offline')">断网离线</button>
+        <button class="seg-pill-btn" id="btnCaseError" onclick="setEdgeState('error')">网络异常</button>
+      </div>
+
+      <!-- View Selector -->
+      <div class="segmented-control">
+        <button class="seg-pill-btn active" id="btnViewSplit" onclick="switchViewMode('split')">双重视图</button>
+        <button class="seg-pill-btn" id="btnViewMockup" onclick="switchViewMode('mockup')">真机原型</button>
+        <button class="seg-pill-btn" id="btnViewSpec" onclick="switchViewMode('spec')">设计规范</button>
+      </div>
+
+      <!-- Theme Switch -->
+      <button class="btn-tool-link" title="切换深色/浅色模式" onclick="toggleThemeMode()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9c0-.46-.04-.92-.1-1.36-.98 1.37-2.58 2.26-4.4 2.26-2.98 0-5.4-2.42-5.4-5.4 0-1.81.89-3.42 2.26-4.4-.44-.06-.9-.1-1.36-.1z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- Workspace Container -->
+  <main class="workspace-wrap">
+
+    <!-- ======================================================== -->
+    <!-- LEFT PANE: STRICT DESIGN SYSTEM SPECIFICATION            -->
+    <!-- ======================================================== -->
+    <section class="spec-pane" id="specPane">
+      
+      <!-- 1. Edge Case Design Spec -->
+      <div class="spec-card">
+        <div class="spec-card-title">
+          1. 边界状态设计规范与容灾表现 (Edge Cases & Resilience Spec)
+          <span>离线脱网、未搜到、弱网解析与异常</span>
+        </div>
+        <table class="spec-table-clean">
+          <thead>
+            <tr>
+              <th>边界场景</th>
+              <th>视觉触发与形态设计</th>
+              <th>自愈操作与交互流</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>断网离线 (Offline Mode)</strong></td>
+              <td>在搜索框下方滑出优雅黄色提示条：<code>[离线模式] 网络未连接，仅展示与播放本地已下载内容</code>；信号栏切换断网图标；仅本地歌曲保留高亮可播，未下载歌曲置灰。</td>
+              <td>提供行内「重试连接」快捷触发；恢复网络后提示条平滑收起。</td>
+            </tr>
+            <tr>
+              <td><strong>未搜索到 (Empty Search)</strong></td>
+              <td>搜索输入无匹配时，静默切换为极简居中状态：带暗色搜索图标、主标题「未找到相关歌曲」、说明「可尝试歌手全名或直接粘贴链接」。</td>
+              <td>提供纯净线框按钮「清空输入」，点击后清空关键词并恢复全量流。<strong>彻底废除干扰性弹框提示</strong>。</td>
+            </tr>
+            <tr>
+              <td><strong>网络异常 / 302 超时 (Network Error)</strong></td>
+              <td>音源跨协议重定向超时或网络震荡时，列表区展示红色微弱衬底卡片，明确指出「网络连接超时，无法解析在线音源」。</td>
+              <td>提供「重新尝试」主按钮与「查看诊断日志」链接，杜绝静默失败。</td>
+            </tr>
+            <tr>
+              <td><strong>解析缓冲中 (Buffering State)</strong></td>
+              <td>解析多源音轨时，展示单色 2px 极细 Accent 环形微动画 +「正在匹配最佳音源...」。</td>
+              <td>非阻塞式呈现，解析完成后平滑过渡到播放页。</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- 2. Soft Rose Red Restrained Palette -->
+      <div class="spec-card">
+        <div class="spec-card-title">
+          2. 淡红现代明亮配色系统 (Soft Rose Red Palette)
+          <span>纯净高对比度浅色底色 + 淡红主色，平面极简无光污染</span>
+        </div>
+        <div class="swatch-grid">
+          <div class="swatch-box-item" onclick="copyTokenHex('#F43F5E')">
+            <div class="swatch-visual" style="background:#F43F5E;"></div>
+            <div class="swatch-meta-text">
+              <div class="swatch-name">Primary Accent</div>
+              <div class="swatch-val">#F43F5E (淡红玫瑰)</div>
+            </div>
+          </div>
+          <div class="swatch-box-item" onclick="copyTokenHex('#0C0A12')">
+            <div class="swatch-visual" style="background:#0C0A12;"></div>
+            <div class="swatch-meta-text">
+              <div class="swatch-name">App Canvas</div>
+              <div class="swatch-val">#0C0A12 (基底黑)</div>
+            </div>
+          </div>
+          <div class="swatch-box-item" onclick="copyTokenHex('#14121D')">
+            <div class="swatch-visual" style="background:#14121D;"></div>
+            <div class="swatch-meta-text">
+              <div class="swatch-name">Surface Level</div>
+              <div class="swatch-val">#14121D (容器灰)</div>
+            </div>
+          </div>
+          <div class="swatch-box-item" onclick="copyTokenHex('#10B981')">
+            <div class="swatch-visual" style="background:#10B981;"></div>
+            <div class="swatch-meta-text">
+              <div class="swatch-name">Offline Status</div>
+              <div class="swatch-val">#10B981 (离线绿)</div>
+            </div>
+          </div>
+          <div class="swatch-box-item" onclick="copyTokenHex('#F59E0B')">
+            <div class="swatch-visual" style="background:#F59E0B;"></div>
+            <div class="swatch-meta-text">
+              <div class="swatch-name">Offline Strip</div>
+              <div class="swatch-val">#F59E0B (脱网警示)</div>
+            </div>
+          </div>
+          <div class="swatch-box-item" onclick="copyTokenHex('#EF4444')">
+            <div class="swatch-visual" style="background:#EF4444;"></div>
+            <div class="swatch-meta-text">
+              <div class="swatch-name">Error State</div>
+              <div class="swatch-val">#EF4444 (报错红)</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 5. Kugou Visual Playback Spec -->
+      <div class="spec-card">
+        <div class="spec-card-title">
+          5. 酷狗音乐经典播放风格规范 (Kugou Visual Playback Spec)
+          <span>破格黑胶浮岛、环形进度播放键、封面流光高斯模糊与炫胶唱盘</span>
+        </div>
+        <table class="spec-table-clean">
+          <thead>
+            <tr>
+              <th>酷狗经典视觉要素</th>
+              <th>形态构造与交互细节</th>
+              <th>Compose 技术落地映射</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>破格悬浮黑胶 (Breaking-out Disc)</strong></td>
+              <td>底部迷你播放条左侧唱片向上破格突破外框（外溢 12px），平滑匀速旋转，赋予界面极强的实体唱机感。</td>
+              <td>在 Compose 中使用 <code>offset(y = (-8).dp)</code> 配合 <code>clip(CircleShape)</code> 与旋转动画。</td>
+            </tr>
+            <tr>
+              <td><strong>环形进度播放键 (Circular Progress Ring)</strong></td>
+              <td>废除单调的横条进度，将播放进度直接化为**围绕播放/暂停圆钮的环形走字弧线（SVG Ring）**，顺时针闭合，兼顾极简与辨识度。</td>
+              <td>使用 <code>CircularProgressIndicator(progress = { ... }, strokeWidth = 2.5.dp)</code> 将 <code>IconButton</code> 居中包裹。</td>
+            </tr>
+            <tr>
+              <td><strong>全屏封面流光模糊 (Adaptive Ambient Blur)</strong></td>
+              <td>彻底告别冰冷死黑，提取正在播放的歌曲封面色，叠加超大半径高斯模糊（Blur 48px）与暗角渐变，营造温暖沉浸视听氛围。</td>
+              <td>全屏播放页底层采用 <code>AsyncImage + blur(50.dp) + radialGradient(vignette)</code>，配合弱光呼吸动效。</td>
+            </tr>
+            <tr>
+              <td><strong>炫胶唱盘与金属唱针 (Vinyl & Tonearm)</strong></td>
+              <td>高精黑胶唱纹、外沿氛围微光、机械金属唱针在播放时物理落针、暂停抬起。</td>
+              <td>基于 <code>rotate(angle)</code> 驱动唱针，黑胶转盘施加 <code>elevation = 24.dp</code> 深度投影。</td>
+            </tr>
+            <tr>
+              <td><strong>Hi-Res 金标与蝰蛇微标 (Audio Badges)</strong></td>
+              <td>歌名下方配备酷狗标志性金标 <code>[Hi-Res]</code> 与 <code>[蝰蛇全景声]</code>，传达专业音质心智。</td>
+              <td>极简紧凑微标胶囊组件，统一字号与视觉层级。</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- 5. Playback Component Elevation & Shadow Spec -->
+      <div class="spec-card">
+        <div class="spec-card-title">
+          5. 播放组件层级投影规范 (Elevation & Drop-Glow Shadows)
+          <span>通过多层物理光影拉开空间景深，强化悬浮突出感</span>
+        </div>
+        <table class="spec-table-clean">
+          <thead>
+            <tr>
+              <th>核心播放组件</th>
+              <th>形态与投影构造 (Elevation & Shadow Tokens)</th>
+              <th>Compose 技术实现规范</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>底部悬浮播放条 (MiniPlayerBar)</strong></td>
+              <td><strong>独立浮岛胶囊形态 (Floating Dock)</strong>。悬浮于底导航之上，四周留白（左右各 10px，下距 64px）；双层物理投影：底黑深层散焦影 <code>0 14px 34px -4px rgba(0,0,0,0.88)</code> + 顶层微弱电光紫氛围微晕 <code>0 6px 20px rgba(124,58,237,0.32)</code> + 顶部 1px 微反光描边。</td>
+              <td><code>Modifier.shadow(elevation = 12.dp, shape = RoundedCornerShape(16.dp), ambientColor = Color.Black, spotColor = Color(0x7C3AED).copy(alpha = 0.35f))</code> + <code>border(1.dp, Color(0x7C3AED).copy(alpha = 0.35f))</code>。</td>
+            </tr>
+            <tr>
+              <td><strong>全屏主播放控制键 (Main Play Button)</strong></td>
+              <td><strong>全屏能量焦点 (Energy Core)</strong>。68dp 实心电光紫渐变大圆钮；配置专属高扩散立体辉光阴影：<code>0 12px 30px rgba(124,58,237,0.58)</code> + 底部环境黑影 <code>0 4px 10px rgba(0,0,0,0.5)</code>；按压物理缩放回弹反馈。</td>
+              <td>使用带弥散投影的 <code>Box</code> 或自定义绘图修饰符 <code>drawBehind</code> 绘制径向渐变阴影，突出全屏唯一的核心操作抓手。</td>
+            </tr>
+            <tr>
+              <td><strong>黑胶唱片转盘 (Vinyl Record 3D)</strong></td>
+              <td><strong>立体悬浮景深 (Floating Disc)</strong>。254dp 径向黑胶槽纹；叠加 <code>0 26px 56px rgba(0,0,0,0.92)</code> 重度深空落影 + <code>0 0 40px rgba(124,58,237,0.22)</code> 周边泛光，拉开唱片与背景的悬空距离。</td>
+              <td>Compose 中对黑胶转盘容器施加 <code>elevation = 24.dp</code>，配合中心高光圆环形成硬件实体感。</td>
+            </tr>
+            <tr>
+              <td><strong>正在播放条目 (Active Track)</strong></td>
+              <td><strong>微抬升浮层 (Elevation 2dp)</strong>。列表与队列中的当前播放歌曲，卡片轻微上浮 1px，赋予 <code>0 4px 16px rgba(124,58,237,0.20)</code> 柔和紫光衬底。</td>
+              <td><code>Card(elevation = CardDefaults.cardElevation(defaultElevation = 2.dp))</code>。</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- 4. Profile 3-Tab Swipe Gesture Spec -->
+      <div class="spec-card">
+        <div class="spec-card-title">
+          4. 「我的」三 Tab 手势横滑切换规范 (HorizontalPager Gesture Spec)
+          <span>收藏 / 离线 / 历史 支持左右滑动跟手切换</span>
+        </div>
+        <table class="spec-table-clean">
+          <thead>
+            <tr>
+              <th>规范维度</th>
+              <th>视觉与交互表现</th>
+              <th>Compose 技术实现约束</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>手势跟手性 (Swipe Gesture)</strong></td>
+              <td>在内容列表区域左右拖动手势时，3 个 Tab 内容（收藏、离线、历史）跟随手指位移无缝平移；位移超过 25% 宽度或滑动速度足够时自动吸附切换至相邻 Tab，未达阈值平滑弹回。</td>
+              <td>采用 <code>HorizontalPager(state = pagerState)</code> 承载；在 <code>FavoritesScreen.kt</code> 中剥离原静态 <code>when (selectedSubTab)</code>，实现与 <code>TabRow</code> 双向绑定。</td>
+            </tr>
+            <tr>
+              <td><strong>Tab 联动指示 (TabRow Sync)</strong></td>
+              <td>手势滑动时，上方 Segmented Tab 的高亮指示块随 Pager 滚动进度实时插值平移，保证滑到哪、高亮到哪，松手即就位。</td>
+              <td>使用 <code>rememberCoroutineScope</code> 在点击 Tab 时调用 <code>pagerState.animateScrollToPage(index)</code>；监听 <code>pagerState.currentPage</code> 回调 <code>onSubTabChange</code>。</td>
+            </tr>
+            <tr>
+              <td><strong>滚动冲突隔离 (Scroll Disambiguation)</strong></td>
+              <td>垂直滑动（上下浏览歌曲列表）由内部 <code>LazyColumn</code> 优先消费；仅在横向拖动夹角主导时触发 Pager 水平翻页，无任何手势打架或卡顿。</td>
+              <td>Compose 内置嵌套滑动调度机制（NestedScrollConnection），原生支持垂直 LazyColumn 与水平 HorizontalPager 完美互锁。</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- 3. Playback Queue Reorder & Backlog Spec -->
+      <div class="spec-card">
+        <div class="spec-card-title">
+          3. 播放队列交互与功能待办 (Playback Queue & Reorder Spec · <a href="https://github.com/bighb/music-app/issues/6" target="_blank" style="color:var(--accent); text-decoration:underline;">Issue #6</a>)
+          <span>当前播放固定首位，待播放列表长按自由拖拽调序</span>
+        </div>
+        <table class="spec-table-clean">
+          <thead>
+            <tr>
+              <th>队列层级</th>
+              <th>定位与交互行为</th>
+              <th>代码实现约束 (Compose / State)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>当前播放曲目 (Index 0)</strong></td>
+              <td><strong>永久置顶固定 (Pinned at top)</strong>。无论如何拖动后续待播列表，当前播放项始终处于队列第 1 位。无拖拽手柄、不响应长按位移、不可被跨越或置换。</td>
+              <td>在 <code>PlaylistBottomSheet.kt</code> 中剥离拖拽修饰符；<code>onReorderQueue</code> 拦截任何 <code>toIndex == 0</code> 或 <code>fromIndex == 0</code> 的越界请求。</td>
+            </tr>
+            <tr>
+              <td><strong>待播放曲目 (Index &gt;= 1)</strong></td>
+              <td><strong>长按拖拽排序 (Drag-to-Reorder)</strong>。右侧提供极简抓手图标（<code>⋮⋮</code>），长按任一待播项即可触发平滑上下拖拽位移；松手立即生效并保存待播顺序。</td>
+              <td>废除原笨重的上下箭头图标 (<code>KeyboardArrowUp/Down</code>)；采用 Compose <code>detectDragGesturesAfterLongPress</code> 或 <code>ReorderableLazyColumn</code>，触发 <code>HapticFeedbackType.LongPress</code> 触感振动。</td>
+            </tr>
+            <tr>
+              <td><strong>拖拽视觉反馈 (Drag Feedback)</strong></td>
+              <td>被抓取项浮起（Z轴提升 + 轻微暗度高亮 + 虚线外框），相邻项自动平顺推开避让，提供确定性的落位指示。</td>
+              <td>仅更新待播列表内存副本与 <code>PlayerState.playlist</code>，确保后台 <code>ExoPlayer</code> / <code>MediaSession</code> 待播缓冲无缝同步。</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+    </section>
+
+    <!-- ======================================================== -->
+    <!-- RIGHT PANE: HIGH-FIDELITY PHONE PROTOTYPE                -->
+    <!-- ======================================================== -->
+    <section class="device-pane" id="mockupPane">
+      <div class="phone-body">
+        <div class="phone-glass-screen">
+          
+          <!-- Punch Hole & Status Bar -->
+          <div class="punch-hole-cam"></div>
+          <div class="phone-top-status">
+            <span id="statusBarClock">16:08</span>
+            <div class="status-icons-box" id="statusIconsBox">
+              <!-- Online 5G / Signal Icon (Switches in offline state) -->
+              <svg id="statusSignalSvg" width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M2 22h20V2z"/></svg>
+              <span id="status5gTag" style="font-size:9px; font-weight:700;">5G</span>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M15.67 4H14V2h-4v2H8.33C7.6 4 7 4.6 7 5.33v15.33C7 21.4 7.6 22 8.33 22h7.33c.74 0 1.34-.6 1.34-1.33V5.33C17 4.6 16.4 4 15.67 4z"/></svg>
+            </div>
+          </div>
+
+          <!-- Main Scrollable App Viewport -->
+          <div class="screen-scroll-wrap">
+            
+            <!-- -------------------------------------------------- -->
+            <!-- 1. DISCOVER / SEARCH SCREEN (发现页)               -->
+            <!-- -------------------------------------------------- -->
+            <div class="screen-page active" id="pageDiscover">
+              
+              <!-- Search Box (Silent Filtering - No Toast on Enter) -->
+              <div class="search-box-clean">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="var(--text-muted)">
+                  <path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
+                </svg>
+                <input type="text" id="phoneSearchBox" class="search-txt-input" placeholder="搜索歌曲或粘贴链接" value="搁浅" oninput="onInputSearchLive(this.value)">
+                <button class="btn-search-clear active" id="btnClearSearchInput" onclick="clearSearchTextSilent()">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+                </button>
+              </div>
+
+              <!-- Offline Mode Subtle Strip (Edge Case) -->
+              <div class="offline-status-strip" id="offlineStatusStrip">
+                <div class="offline-strip-left">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M23.64 7c-.45-.34-4.93-4-11.64-4-1.5 0-2.8.2-3.99.51l2.4 2.4C11.14 5.35 11.66 5.3 12 5.3c5.3 0 9.12 2.87 9.54 3.2L12 19.34l-3.32-4.14 1.48-1.48c.19.05.39.08.6.08 1.1 0 2-.9 2-2 0-.21-.03-.41-.08-.6l6.63-6.63L23.64 7zM1.42 3.14L0 4.56l2.06 2.06C1.3 7.14.7 7.6.36 7.9L12 22.42l4.82-5.99 4.62 4.62 1.42-1.42L1.42 3.14z"/></svg>
+                  <span>网络未连接 · 仅展示本地离线</span>
+                </div>
+                <button class="btn-retry-network" onclick="retryNetworkCheck()">重试</button>
+              </div>
+
+              <!-- History Row Directly Below Search Input (Issue #5) -->
+              <div class="history-row-clean" id="historyFlowSection">
+                <div class="history-pills-wrap" id="pillsContainer">
+                  <span class="history-pill" onclick="searchForSilent('搁浅')">搁浅</span>
+                  <span class="history-pill" onclick="searchForSilent('晴天')">晴天</span>
+                  <span class="history-pill" onclick="searchForSilent('乌梅子酱')">乌梅子酱</span>
+                  <span class="history-pill" onclick="searchForSilent('七里香')">七里香</span>
+                </div>
+                <button class="btn-history-clear-icon" title="一键清空历史" onclick="clearSearchHistorySilent()">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M16 9v10H8V9h8m-1.5-6h-5l-1 1H5v2h14V4h-3.5l-1-1zM18 7H6v12c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7z"/></svg>
+                </button>
+              </div>
+
+              <!-- EDGE CASE 1: Empty Search Result State -->
+              <div class="empty-search-state" id="emptySearchBox">
+                <div class="empty-icon-box">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+                </div>
+                <div class="empty-search-title">未找到相关歌曲</div>
+                <div class="empty-search-desc">建议检查歌名拼写，或直接粘贴外链解析</div>
+                <button class="btn-clear-search-keyword" onclick="clearSearchTextSilent()">清空输入</button>
+              </div>
+
+              <!-- EDGE CASE 2: Network Error State -->
+              <div class="network-error-state" id="networkErrorBox">
+                <div class="net-err-icon-box">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
+                </div>
+                <div class="net-err-title">网络连接异常</div>
+                <div class="net-err-desc">无法解析全网音源，请检查手机网络后重试</div>
+                <button class="btn-net-retry" onclick="retryNetworkCheck()">重新尝试</button>
+              </div>
+
+              <!-- EDGE CASE 3: Loading / Buffering State -->
+              <div class="loading-buffering-state" id="loadingBufferingBox">
+                <div class="loading-spinner-ring"></div>
+                <div>正在多源匹配可用音轨...</div>
+              </div>
+
+              <!-- Regular Pure Songs List (Issue #3 & #4) -->
+              <div class="pure-song-list" id="mainSongList">
+                
+                <!-- Song 1: Local Offline Matched -->
+                <div class="song-list-row" id="rowGeqian" onclick="triggerPlaySongAndOpen('搁浅', '周杰伦 · 本地离线 · 03:59', '本地已下载', '03:59', true)">
+                  <div class="song-cover-thumb">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
+                  </div>
+                  <div class="song-meta-wrap">
+                    <div class="song-title-line">
+                      搁浅
+                      <span class="icon-offline-indicator" title="已离线缓存">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM10 17l-3.5-3.5 1.41-1.41L10 14.17 15.09 9.08l1.41 1.42L10 17z"/></svg>
+                      </span>
+                    </div>
+                    <div class="song-sub-info-line">周杰伦 · 本地优先匹配 · 03:59</div>
+                  </div>
+                  <button class="song-row-action-btn" onclick="event.stopPropagation(); triggerToastDirect('已设为下一首播放')">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>
+                  </button>
+                </div>
+
+                <!-- Song 2: Active Playing Item -->
+                <div class="song-list-row is-active" id="rowQingtian" onclick="triggerPlaySongAndOpen('晴天', '周杰伦 · 酷我无损 · 04:29', '酷我无损直链', '04:29', true)">
+                  <div class="song-cover-thumb">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
+                  </div>
+                  <div class="song-meta-wrap">
+                    <div class="song-title-line">晴天</div>
+                    <div class="song-sub-info-line" style="color:var(--accent);">周杰伦 · 正在播放 · 04:29</div>
+                  </div>
+                  <div class="clean-eq-wave">
+                    <div class="eq-bar-stick"></div>
+                    <div class="eq-bar-stick"></div>
+                    <div class="eq-bar-stick"></div>
+                  </div>
+                </div>
+
+                <!-- Song 3: Douyin Viral Track -->
+                <div class="song-list-row" id="rowWumei" onclick="triggerPlaySongAndOpen('乌梅子酱', '李荣浩 · 抖音原声 · 03:45', '抖音无水印原声', '03:45', false)">
+                  <div class="song-cover-thumb">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
+                  </div>
+                  <div class="song-meta-wrap">
+                    <div class="song-title-line">乌梅子酱</div>
+                    <div class="song-sub-info-line">李荣浩 · 抖音原声音轨 · 03:45</div>
+                  </div>
+                  <button class="song-row-action-btn" onclick="event.stopPropagation(); triggerToastDirect('加入播放队列')">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>
+                  </button>
+                </div>
+
+                <!-- Song 4: Night Nocturne -->
+                <div class="song-list-row" id="rowYequ" onclick="triggerPlaySongAndOpen('夜曲', '周杰伦 · 酷我直链 · 03:46', '全网高保真音频', '03:46', false)">
+                  <div class="song-cover-thumb">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
+                  </div>
+                  <div class="song-meta-wrap">
+                    <div class="song-title-line">夜曲</div>
+                    <div class="song-sub-info-line">周杰伦 · 十一月的萧邦 · 03:46</div>
+                  </div>
+                  <button class="song-row-action-btn" onclick="event.stopPropagation(); triggerToastDirect('加入播放队列')">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>
+                  </button>
+                </div>
+
+                <!-- Song 5: Seven Miles Fragrance -->
+                <div class="song-list-row" id="rowQilixiang" onclick="triggerPlaySongAndOpen('七里香', '周杰伦 · 网易容灾 · 04:59', '已下载至本地', '04:59', true)">
+                  <div class="song-cover-thumb">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
+                  </div>
+                  <div class="song-meta-wrap">
+                    <div class="song-title-line">
+                      七里香
+                      <span class="icon-offline-indicator" title="已离线缓存">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM10 17l-3.5-3.5 1.41-1.41L10 14.17 15.09 9.08l1.41 1.42L10 17z"/></svg>
+                      </span>
+                    </div>
+                    <div class="song-sub-info-line">周杰伦 · 本地存储 · 04:59</div>
+                  </div>
+                  <button class="song-row-action-btn" onclick="event.stopPropagation(); triggerToastDirect('加入播放队列')">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>
+                  </button>
+                </div>
+
+              </div>
+
+            </div>
+
+            <!-- -------------------------------------------------- -->
+            <!-- 2. "ME" TAB (我的资产与设置)                       -->
+            <!-- -------------------------------------------------- -->
+            <div class="screen-page" id="pageMe">
+              <!-- Sub Tabs (Click or Swipe content below) -->
+              <div class="profile-tabs-wrap" style="position:relative;">
+                <button class="profile-sub-tab active" id="subMe0" onclick="switchMeSub(0)">收藏 (8)</button>
+                <button class="profile-sub-tab" id="subMe1" onclick="switchMeSub(1)">下载 (3)</button>
+                <button class="profile-sub-tab" id="subMe2" onclick="switchMeSub(2)">历史 (12)</button>
+              </div>
+
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; font-size:11px; color:var(--text-muted); padding:0 2px;">
+                <span id="meTabHintTitle">我的收藏曲目</span>
+                <span style="font-size:10px; color:var(--accent);">⇄ 支持左右滑动手势切页</span>
+              </div>
+
+              <!-- Gesture-Swipeable Pager Container (HorizontalPager Simulation) -->
+              <div class="me-pager-container" id="mePagerContainer" onpointerdown="onMePagerPointerDown(event)">
+                <div class="me-pager-track" id="mePagerTrack">
+                  
+                  <!-- TAB 0: 收藏歌曲 (Favorites) -->
+                  <div class="me-pager-panel" id="mePanel0">
+                    <div class="pure-song-list">
+                      <div class="song-list-row" onclick="triggerPlaySongAndOpen('晴天', '周杰伦 · 收藏曲目', '酷我直链', '04:29', true)">
+                        <div class="song-cover-thumb">
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
+                        </div>
+                        <div class="song-meta-wrap">
+                          <div class="song-title-line">晴天</div>
+                          <div class="song-sub-info-line">周杰伦 · 收藏于 2 小时前</div>
+                        </div>
+                        <button class="song-row-action-btn" title="移出收藏" onclick="event.stopPropagation(); triggerToastDirect('已移出收藏')">
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="var(--accent)"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+                        </button>
+                      </div>
+
+                      <div class="song-list-row" onclick="triggerPlaySongAndOpen('七里香', '周杰伦 · 收藏曲目', '酷我直链', '04:59', true)">
+                        <div class="song-cover-thumb">
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
+                        </div>
+                        <div class="song-meta-wrap">
+                          <div class="song-title-line">七里香</div>
+                          <div class="song-sub-info-line">周杰伦 · 收藏于 昨天</div>
+                        </div>
+                        <button class="song-row-action-btn" title="移出收藏" onclick="event.stopPropagation(); triggerToastDirect('已移出收藏')">
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="var(--accent)"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- TAB 1: 离线下载 (Downloads) -->
+                  <div class="me-pager-panel" id="mePanel1">
+                    <div class="pure-song-list">
+                      <div class="song-list-row" onclick="triggerPlaySongAndOpen('搁浅', '周杰伦 · 本地已下载', '本地存储', '03:59', true)">
+                        <div class="song-cover-thumb">
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
+                        </div>
+                        <div class="song-meta-wrap">
+                          <div class="song-title-line">
+                            搁浅
+                            <span class="icon-offline-indicator" title="离线可用"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM10 17l-3.5-3.5 1.41-1.41L10 14.17 15.09 9.08l1.41 1.42L10 17z"/></svg></span>
+                          </div>
+                          <div class="song-sub-info-line">已占用本地存储 14.2 MB · 可脱网播放</div>
+                        </div>
+                        <button class="song-row-action-btn" title="删除本地文件" onclick="event.stopPropagation(); triggerToastDirect('已删除本地离线文件')">
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M16 9v10H8V9h8m-1.5-6h-5l-1 1H5v2h14V4h-3.5l-1-1zM18 7H6v12c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7z"/></svg>
+                        </button>
+                      </div>
+
+                      <div class="song-list-row" onclick="triggerPlaySongAndOpen('七里香', '周杰伦 · 本地已下载', '本地存储', '04:59', true)">
+                        <div class="song-cover-thumb">
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
+                        </div>
+                        <div class="song-meta-wrap">
+                          <div class="song-title-line">
+                            七里香
+                            <span class="icon-offline-indicator" title="离线可用"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM10 17l-3.5-3.5 1.41-1.41L10 14.17 15.09 9.08l1.41 1.42L10 17z"/></svg></span>
+                          </div>
+                          <div class="song-sub-info-line">已占用本地存储 11.8 MB · 可脱网播放</div>
+                        </div>
+                        <button class="song-row-action-btn" title="删除本地文件" onclick="event.stopPropagation(); triggerToastDirect('已删除本地离线文件')">
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M16 9v10H8V9h8m-1.5-6h-5l-1 1H5v2h14V4h-3.5l-1-1zM18 7H6v12c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7z"/></svg>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- TAB 2: 播放历史 (History) -->
+                  <div class="me-pager-panel" id="mePanel2">
+                    <div class="pure-song-list">
+                      <div class="song-list-row" onclick="triggerPlaySongAndOpen('乌梅子酱', '李荣浩 · 历史记录', '抖音原声', '03:45', false)">
+                        <div class="song-cover-thumb">
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
+                        </div>
+                        <div class="song-meta-wrap">
+                          <div class="song-title-line">乌梅子酱</div>
+                          <div class="song-sub-info-line">李荣浩 · 上次播放于 30 分钟前</div>
+                        </div>
+                        <button class="song-row-action-btn" title="移出历史" onclick="event.stopPropagation(); triggerToastDirect('已移出播放历史')">
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+                        </button>
+                      </div>
+
+                      <div class="song-list-row" onclick="triggerPlaySongAndOpen('夜曲', '周杰伦 · 历史记录', '酷我高保真', '03:46', false)">
+                        <div class="song-cover-thumb">
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
+                        </div>
+                        <div class="song-meta-wrap">
+                          <div class="song-title-line">夜曲</div>
+                          <div class="song-sub-info-line">周杰伦 · 上次播放于 1 小时前</div>
+                        </div>
+                        <button class="song-row-action-btn" title="移出历史" onclick="event.stopPropagation(); triggerToastDirect('已移出播放历史')">
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                </div>
+              </div>
+
+              <!-- Ultra-hidden developer entry at bottom -->
+              <div class="profile-dev-footer">
+                <button class="btn-dev-trigger" onclick="openDebugModal()">
+                  v1.2.0 (Build 34) · 诊断日志
+                </button>
+              </div>
+
+            </div>
+
+          </div>
+
+          <!-- -------------------------------------------------- -->
+          <!-- KUGOU ICONIC MINI PLAYER BAR (Breaking Vinyl + Circular Progress) -->
+          <!-- -------------------------------------------------- -->
+          <div class="kugou-mini-bar" onclick="openFullscreenPlayer()">
+            <div class="kugou-mini-content">
+              
+              <!-- 1. Breaking-Out Vinyl Disc -->
+              <div class="kugou-mini-vinyl-wrapper" onclick="event.stopPropagation(); togglePlayPauseMaster();">
+                <div class="kugou-mini-vinyl-disc is-rotating" id="miniVinylThumb">
+                  <div class="kugou-mini-grooves"></div>
+                  <div class="kugou-mini-cover">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 2. Track Title & Artist Info -->
+              <div class="kugou-mini-meta-box">
+                <div class="kugou-mini-title-row">
+                  <span class="kugou-mini-title" id="miniTitleLbl">晴天</span>
+                  <span class="kugou-hires-badge">Hi-Res</span>
+                </div>
+                <div class="kugou-mini-artist" id="miniArtistLbl">周杰伦 · 蝰蛇全景声</div>
+              </div>
+
+              <!-- 3. Circular Progress Ring Play Button + Next + Queue -->
+              <div class="kugou-mini-actions" onclick="event.stopPropagation();">
+                
+                <!-- Circular Progress Ring Button -->
+                <div class="kugou-circle-play-btn" onclick="togglePlayPauseMaster()" title="播放/暂停">
+                  <svg class="kugou-ring-svg" width="36" height="36" viewBox="0 0 36 36">
+                    <circle cx="18" cy="18" r="15" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="2.5"/>
+                    <circle id="miniCircleProgress" cx="18" cy="18" r="15" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-dasharray="94.25" stroke-dashoffset="54.6" stroke-linecap="round"/>
+                  </svg>
+                  <div class="kugou-circle-play-icon" id="miniMasterPlayIcon">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+                  </div>
+                </div>
+
+                <!-- Next Song -->
+                <button class="kugou-mini-btn" title="下一首" onclick="skipSongNext()">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
+                </button>
+
+                <!-- Queue Sheet -->
+                <button class="kugou-mini-btn" title="播放队列" onclick="openQueueDrawer()">
+                  <svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor"><path d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z"/></svg>
+                </button>
+
+              </div>
+            </div>
+          </div>
+
+          <!-- Bottom Navigation (Strictly 2 Minimal Tabs) -->
+          <nav class="bottom-nav-bar">
+            <button class="nav-tab-item active" id="tabDiscoverBtn" onclick="switchNav(0)">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 10.9c-.61 0-1.1.49-1.1 1.1s.49 1.1 1.1 1.1c.61 0 1.1-.49 1.1-1.1s-.49-1.1-1.1-1.1zM12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm2.19 12.19L6 18l3.81-8.19L18 6l-3.81 8.19z"/></svg>
+              发现
+            </button>
+            <button class="nav-tab-item" id="tabMeBtn" onclick="switchNav(1)">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+              我的
+            </button>
+          </nav>
+
+          <!-- -------------------------------------------------- -->
+          <!-- FULLSCREEN IMMERSIVE PLAYBACK PAGE                 -->
+          <!-- -------------------------------------------------- -->
+          <div class="now-playing-fullscreen" id="fullscreenPlayerModal">
+            
+            <!-- Kugou Dynamic Cover Ambient Blur Background -->
+            <div class="kugou-player-bg-glow">
+              <div class="kugou-glow-blob1"></div>
+              <div class="kugou-glow-blob2"></div>
+              <div class="kugou-vignette-mask"></div>
+            </div>
+
+            <!-- Top Row -->
+            <div class="playing-top-bar" style="position:relative; z-index:20;">
+              <button class="btn-collapse-down" onclick="closeFullscreenPlayer()">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/></svg>
+              </button>
+
+              <div class="kugou-viper-badge" id="fullSourceBadge">
+                蝰蛇全景声 · 空间环绕
+              </div>
+
+              <!-- Toggle Lyrics View Mode Button -->
+              <button class="btn-lyrics-toggle" id="btnLyricToggle" title="切换歌词" onclick="toggleLyricsMode()">
+                词
+              </button>
+            </div>
+
+            <!-- Center Stage: Vinyl & Mechanical Tonearm -->
+            <div class="vinyl-stage-stage">
+              
+              <!-- Tonearm Assembly -->
+              <div class="tonearm-assembly is-needle-down" id="tonearmElement">
+                <div class="tonearm-pivot"></div>
+                <div class="tonearm-shaft"></div>
+                <div class="tonearm-cartridge"></div>
+              </div>
+
+              <!-- 3D Vinyl Disc -->
+              <div class="vinyl-disc-3d rotating" id="mainVinylDisc" onclick="togglePlayPauseMaster()">
+                <div class="groove-outer"></div>
+                <div class="groove-inner"></div>
+                <div class="vinyl-album-center">
+                  <svg width="46" height="46" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
+                </div>
+                <div class="vinyl-center-pin"></div>
+              </div>
+
+              <!-- Synced Lyrics Display Stage -->
+              <div class="lyrics-stage-display" id="lyricsDisplay">
+                <div class="lyric-line-faint">刮风这天 我试过握着你手</div>
+                <div class="lyric-line-faint">但偏偏 雨渐渐 大到我看你不见</div>
+                <div class="lyric-line-highlight">还要多久 我才能在你身边</div>
+                <div class="lyric-line-faint">等到放晴的那天 也许我会比较好一点</div>
+                <div class="lyric-line-faint">从前从前 有个人爱你很久</div>
+              </div>
+
+            </div>
+
+            <!-- Track Metadata & Heart Button -->
+            <div class="track-info-plate" style="position:relative; z-index:20;">
+              <div>
+                <div class="track-title-lead" id="fullTitleHeading" style="color:#111827; font-weight:700; font-size:20px;">晴天</div>
+                <div class="track-artist-sub" style="gap:6px; margin-top:3px; color:#374151; font-size:12px; font-weight:500;">
+                  <span class="kugou-hires-badge">Hi-Res</span>
+                  <span id="fullArtistHeading" style="color:#1F2937; font-weight:600;">周杰伦 · 叶惠美</span>
+                  <span style="color:#4B5563;">| 酷狗无损音质</span>
+                </div>
+              </div>
+
+              <!-- Heart -->
+              <button class="btn-fav-icon is-favorited" id="btnFavoriteToggle" onclick="toggleFavoriteState()">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+              </button>
+            </div>
+
+            <!-- Scrubber Track -->
+            <div class="scrubber-clean-box">
+              <input type="range" class="scrubber-slider-clean" id="fullScrubberInput" min="0" max="100" value="42" oninput="onScrubChange(this.value)">
+              <div class="scrubber-clock-row">
+                <span id="labelCurrentTime">01:52</span>
+                <span id="labelTotalDuration">04:29</span>
+              </div>
+            </div>
+
+            <!-- Controls Row -->
+            <div class="playback-controls-row">
+              <button class="btn-ctrl-ghost active" id="btnPlaybackModeToggle" title="切换模式" onclick="toggleModeCycle()">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"/></svg>
+              </button>
+
+              <button class="btn-step-skip" title="上一首" onclick="skipSongPrev()">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
+              </button>
+
+              <button class="btn-main-play-solid" title="播放 / 暂停" onclick="togglePlayPauseMaster()">
+                <svg id="giantPlaySvg" width="32" height="32" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
+                </svg>
+              </button>
+
+              <button class="btn-step-skip" title="下一首" onclick="skipSongNext()">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
+              </button>
+
+              <button class="btn-ctrl-ghost" title="查看队列" onclick="openQueueDrawer()">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z"/></svg>
+              </button>
+            </div>
+
+          </div>
+
+          <!-- -------------------------------------------------- -->
+          <!-- QUEUE BOTTOM DRAWER (Issue #6: Drag Reorder & Pinned Top) -->
+          <!-- -------------------------------------------------- -->
+          <div class="queue-scrim-layer" id="queueScrimLayer" onclick="closeQueueDrawer()"></div>
+          <div class="queue-sheet-drawer" id="queueSheetDrawer">
+            <div class="sheet-handle-bar"></div>
+            <div class="queue-sheet-header">
+              <div class="queue-title-bold">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="var(--accent)"><path d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z"/></svg>
+                播放队列 (4)
+              </div>
+              <button style="background:none; border:none; color:var(--text-muted); font-size:12px; cursor:pointer;" onclick="clearQueueListItems()">清空</button>
+            </div>
+
+            <!-- Queue Scroll Container -->
+            <div style="flex:1; overflow-y:auto; display:flex; flex-direction:column;" id="queueListBody">
+              
+              <!-- SECTION 1: Pinned Playing Song (Index 0, Locked) -->
+              <div class="queue-section-hint">
+                <span>当前播放 · 固定首位</span>
+                <span style="font-size:10px; color:var(--accent);">不可拖移</span>
+              </div>
+              <div class="queue-row-card is-pinned" onclick="triggerPlaySongAndOpen('晴天', '周杰伦 · 酷我无损 · 04:29', '酷我无损直链', '04:29', true)">
+                <div class="queue-col-left">
+                  <div class="queue-idx-badge" style="color:var(--accent); font-weight:700;">1</div>
+                  <div style="min-width:0;">
+                    <div class="queue-song-title" style="color:var(--accent);">晴天</div>
+                    <div class="queue-song-sub">周杰伦 · 酷我无损 · 04:29</div>
+                  </div>
+                </div>
+                <div class="queue-col-right">
+                  <span class="queue-playing-pill">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
+                    播放中
+                  </span>
+                </div>
+              </div>
+
+              <!-- SECTION 2: Upcoming Pending Queue (Index >= 1, Draggable) -->
+              <div class="queue-section-hint" style="margin-top:10px;">
+                <span>待播放 (可长按拖拽调整顺序)</span>
+                <span style="font-size:10px; color:var(--text-muted);">自由调序</span>
+              </div>
+              <div id="queueReorderList" style="display:flex; flex-direction:column; gap:4px;">
+                
+                <div class="queue-row-card is-draggable" id="qItem2" draggable="true" ondragstart="onQueueDragStart(event)" ondragover="onQueueDragOver(event)" ondragleave="onQueueDragLeave(event)" ondrop="onQueueDrop(event)" ondragend="onQueueDragEnd(event)" onclick="triggerPlaySongAndOpen('搁浅', '周杰伦 · 本地离线 · 03:59', '本地已下载', '03:59', true)">
+                  <div class="queue-col-left">
+                    <div class="queue-idx-badge">2</div>
+                    <div style="min-width:0;">
+                      <div class="queue-song-title">搁浅</div>
+                      <div class="queue-song-sub">周杰伦 · 本地离线 · 03:59</div>
+                    </div>
+                  </div>
+                  <div class="queue-col-right">
+                    <button class="song-row-action-btn" title="移出待播" onclick="event.stopPropagation(); removeQueueItem(this);">✕</button>
+                    <div class="queue-drag-grip" title="拖拽调序" onclick="event.stopPropagation();">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M11 18c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2 2 .9 2 2zm-2-8c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0-6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm6 4c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="queue-row-card is-draggable" id="qItem3" draggable="true" ondragstart="onQueueDragStart(event)" ondragover="onQueueDragOver(event)" ondragleave="onQueueDragLeave(event)" ondrop="onQueueDrop(event)" ondragend="onQueueDragEnd(event)" onclick="triggerPlaySongAndOpen('乌梅子酱', '李荣浩 · 抖音原声 · 03:45', '抖音无水印原声', '03:45', false)">
+                  <div class="queue-col-left">
+                    <div class="queue-idx-badge">3</div>
+                    <div style="min-width:0;">
+                      <div class="queue-song-title">乌梅子酱</div>
+                      <div class="queue-song-sub">李荣浩 · 抖音原声 · 03:45</div>
+                    </div>
+                  </div>
+                  <div class="queue-col-right">
+                    <button class="song-row-action-btn" title="移出待播" onclick="event.stopPropagation(); removeQueueItem(this);">✕</button>
+                    <div class="queue-drag-grip" title="拖拽调序" onclick="event.stopPropagation();">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M11 18c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2 2 .9 2 2zm-2-8c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0-6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm6 4c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="queue-row-card is-draggable" id="qItem4" draggable="true" ondragstart="onQueueDragStart(event)" ondragover="onQueueDragOver(event)" ondragleave="onQueueDragLeave(event)" ondrop="onQueueDrop(event)" ondragend="onQueueDragEnd(event)" onclick="triggerPlaySongAndOpen('夜曲', '周杰伦 · 酷我高保真 · 03:46', '酷我高保真直链', '03:46', false)">
+                  <div class="queue-col-left">
+                    <div class="queue-idx-badge">4</div>
+                    <div style="min-width:0;">
+                      <div class="queue-song-title">夜曲</div>
+                      <div class="queue-song-sub">周杰伦 · 酷我高保真 · 03:46</div>
+                    </div>
+                  </div>
+                  <div class="queue-col-right">
+                    <button class="song-row-action-btn" title="移出待播" onclick="event.stopPropagation(); removeQueueItem(this);">✕</button>
+                    <div class="queue-drag-grip" title="拖拽调序" onclick="event.stopPropagation();">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M11 18c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2 2 .9 2 2zm-2-8c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0-6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm6 4c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          </div>
+
+          <!-- ========================================================
+               DIAGNOSTIC LOG DIALOG (With One-Click Copy All Logs)
+               ======================================================== -->
+          <div class="debug-modal-overlay" id="debugModalOverlay" onclick="closeDebugModal()">
+            <div class="debug-modal-content" onclick="event.stopPropagation();">
+              <div class="debug-dialog-header">
+                <div class="debug-dialog-title">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="var(--accent)"><path d="M20 8h-2.81c-.45-.78-1.07-1.45-1.82-1.96L17 4.41 15.59 3l-2.17 2.17C12.96 5.06 12.49 5 12 5c-.49 0-.96.06-1.41.17L8.41 3 7 4.41l1.62 1.63C7.88 6.55 7.26 7.22 6.81 8H4v2h2.09c-.05.33-.09.66-.09 1v1H4v2h2v1c0 .34.04.67.09 1H4v2h2.81c1.04 1.79 2.97 3 5.19 3s4.15-1.21 5.19-3H20v-2h-2.09c.05-.33.09-.66.09-1v-1h2v-2h-2v-1c0-.34-.04-.67-.09-1H20V8zm-6 8h-4v-2h4v2zm0-4h-4v-2h4v2z"/></svg>
+                  诊断日志
+                  <span class="debug-version-badge">v1.2.0</span>
+                </div>
+                <button class="song-row-action-btn" onclick="closeDebugModal()">✕</button>
+              </div>
+
+              <div class="debug-dialog-desc">
+                点击下方「一键复制全部日志」可将抓包解析、MediaSession 及音源调度日志直接复制给 AI 定位修复。
+              </div>
+
+              <div class="debug-actions-row">
+                <button class="btn-copy-all-logs" onclick="copyAllLogsToClipboard()">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
+                  一键复制全部日志
+                </button>
+                <button class="btn-clear-logs-secondary" onclick="clearLogsData()">
+                  清空
+                </button>
+              </div>
+
+              <div class="debug-code-box" id="debugCodeBox">
+                <span class="log-line-info">[INFO] [MainScreen] App initialized. Version: v1.2.0 (Build 34)</span><br>
+                <span class="log-line-info">[INFO] [MediaSession] PlaybackService active, session token bound</span><br>
+                <span class="log-line-info">[INFO] [AudioSourceManager] Registered sources: Douyin, NetMusic, Kuwo</span><br>
+                <span class="log-line-info">[INFO] [KuwoAudioHelper] Direct stream 320kbps resolved in 142ms</span><br>
+                <span class="log-line-warn">[WARN] [NetMusic] Track 10321 requires VIP, fallback cascaded to Kuwo lossless</span><br>
+                <span class="log-line-info">[INFO] [ExoPlayer] Codec AAC / MP3 ready. Cross-protocol 302 intercepted successfully</span><br>
+                <span class="log-line-info">[INFO] [LocalRepo] Offline cache storage verified: 3 tracks (38.4 MB)</span><br>
+                <span class="log-line-info">[INFO] [Playback] Audio sink buffer playing smoothly</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Minimal Toast (Only for explicit actions like Copy or Favorites) -->
+          <div class="clean-toast" id="cleanToast">提示</div>
+
+          <!-- Gesture Pill -->
+          <div class="system-gesture-pill"></div>
+
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Interactive JavaScript Engine -->
+  <script>
+    let isMasterPlaying = true;
+    let isTrackFavorited = true;
+    let isLyricsViewMode = false;
+    let playPositionSeconds = 112; // 01:52
+    const totalTrackSeconds = 269; // 04:29
+    let currentEdgeCase = 'normal'; // 'normal' | 'empty' | 'offline' | 'error'
+
+    // Timer simulation
+    setInterval(() => {
+      if (isMasterPlaying) {
+        playPositionSeconds = (playPositionSeconds + 1) % totalTrackSeconds;
+        refreshTimeVisuals();
+      }
+    }, 1000);
+
+    function refreshTimeVisuals() {
+      const curM = String(Math.floor(playPositionSeconds / 60)).padStart(2, '0');
+      const curS = String(playPositionSeconds % 60).padStart(2, '0');
+      document.getElementById('labelCurrentTime').innerText = `${curM}:${curS}`;
+      const pct = (playPositionSeconds / totalTrackSeconds) * 100;
+      document.getElementById('fullScrubberInput').value = pct;
+      const fillLine = document.getElementById('miniFillLine');
+      if (fillLine) fillLine.style.width = pct + '%';
+      
+      // Update Kugou Circular Progress Ring (circumference = 94.25)
+      const ring = document.getElementById('miniCircleProgress');
+      if (ring) {
+        const offset = 94.25 - (pct / 100) * 94.25;
+        ring.style.strokeDashoffset = offset;
+      }
+    }
+
+    // Toggle Play / Pause with Tonearm Animation
+    function togglePlayPauseMaster() {
+      isMasterPlaying = !isMasterPlaying;
+      const playSvg = '<path d="M8 5v14l11-7z"/>';
+      const pauseSvg = '<path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>';
+      const path = isMasterPlaying ? pauseSvg : playSvg;
+
+      document.getElementById('miniMasterPlayIcon').innerHTML = path;
+      document.getElementById('giantPlaySvg').innerHTML = path;
+
+      const tonearm = document.getElementById('tonearmElement');
+      const mainDisc = document.getElementById('mainVinylDisc');
+      const miniDisc = document.getElementById('miniVinylThumb');
+
+      if (isMasterPlaying) {
+        tonearm.classList.add('is-needle-down');
+        mainDisc.classList.add('rotating');
+        mainDisc.classList.remove('paused');
+        miniDisc.classList.add('is-rotating');
+      } else {
+        tonearm.classList.remove('is-needle-down');
+        mainDisc.classList.add('paused');
+        miniDisc.classList.remove('is-rotating');
+      }
+    }
+
+    // TRIGGER PLAY AND OPEN FULLSCREEN PLAYBACK PAGE!
+    function triggerPlaySongAndOpen(title, subtitle, badgeText, duration, isFav) {
+      document.getElementById('miniTitleLbl').innerText = title;
+      document.getElementById('miniArtistLbl').innerText = subtitle;
+      document.getElementById('fullTitleHeading').innerText = title;
+      document.getElementById('fullArtistHeading').innerText = subtitle;
+      document.getElementById('fullSourceBadge').innerText = badgeText;
+      document.getElementById('labelTotalDuration').innerText = duration;
+
+      playPositionSeconds = 0;
+      isTrackFavorited = isFav;
+      document.getElementById('btnFavoriteToggle').classList.toggle('is-favorited', isTrackFavorited);
+
+      if (!isMasterPlaying) togglePlayPauseMaster();
+
+      openFullscreenPlayer();
+    }
+
+    function openFullscreenPlayer() {
+      document.getElementById('fullscreenPlayerModal').classList.add('open');
+    }
+    function closeFullscreenPlayer() {
+      document.getElementById('fullscreenPlayerModal').classList.remove('open');
+    }
+
+    function toggleLyricsMode() {
+      isLyricsViewMode = !isLyricsViewMode;
+      document.getElementById('btnLyricToggle').classList.toggle('active', isLyricsViewMode);
+      document.getElementById('lyricsDisplay').classList.toggle('active', isLyricsViewMode);
+      document.getElementById('mainVinylDisc').style.opacity = isLyricsViewMode ? '0.06' : '1';
+      document.getElementById('tonearmElement').style.opacity = isLyricsViewMode ? '0.08' : '1';
+    }
+
+    function toggleFavoriteState() {
+      isTrackFavorited = !isTrackFavorited;
+      document.getElementById('btnFavoriteToggle').classList.toggle('is-favorited', isTrackFavorited);
+      triggerToastDirect(isTrackFavorited ? '已添加至收藏' : '已移出收藏');
+    }
+
+    function onScrubChange(val) {
+      playPositionSeconds = Math.floor((val / 100) * totalTrackSeconds);
+      refreshTimeVisuals();
+    }
+
+    function skipSongNext() {
+      triggerPlaySongAndOpen('乌梅子酱', '李荣浩 · 抖音原声 · 03:45', '抖音无水印原声', '03:45', false);
+    }
+    function skipSongPrev() {
+      triggerPlaySongAndOpen('搁浅', '周杰伦 · 本地离线 · 03:59', '本地已下载', '03:59', true);
+    }
+
+    function toggleModeCycle() {
+      const modes = ['列表循环', '单曲循环', '随机播放'];
+      window.curMode = ((window.curMode || 0) + 1) % 3;
+      triggerToastDirect('播放模式: ' + modes[window.curMode]);
+    }
+
+    // Queue Drawer
+    function openQueueDrawer() {
+      document.getElementById('queueSheetDrawer').classList.add('open');
+      document.getElementById('queueScrimLayer').classList.add('active');
+    }
+    function closeQueueDrawer() {
+      document.getElementById('queueSheetDrawer').classList.remove('open');
+      document.getElementById('queueScrimLayer').classList.remove('active');
+    }
+    function clearQueueListItems() {
+      document.getElementById('queueListBody').innerHTML = '<div style="text-align:center; padding:36px; color:var(--text-muted); font-size:13px;">播放队列已清空</div>';
+    }
+
+    // Drag & Drop Queue Reordering (Issue #6)
+    let draggedQueueItem = null;
+
+    function onQueueDragStart(e) {
+      draggedQueueItem = e.currentTarget;
+      e.currentTarget.classList.add('is-dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', e.currentTarget.id);
+    }
+
+    function onQueueDragOver(e) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      const target = e.currentTarget;
+      if (target && target !== draggedQueueItem && target.classList.contains('is-draggable')) {
+        const list = document.getElementById('queueReorderList');
+        const rect = target.getBoundingClientRect();
+        const next = (e.clientY - rect.top) / (rect.bottom - rect.top) > 0.5;
+        list.insertBefore(draggedQueueItem, next && target.nextSibling || target);
+        updateQueueNumbers();
+      }
+    }
+
+    function onQueueDragLeave(e) {
+      e.currentTarget.classList.remove('drag-over');
+    }
+
+    function onQueueDrop(e) {
+      e.preventDefault();
+      e.currentTarget.classList.remove('drag-over');
+      updateQueueNumbers();
+    }
+
+    function onQueueDragEnd(e) {
+      if (draggedQueueItem) {
+        draggedQueueItem.classList.remove('is-dragging');
+        draggedQueueItem = null;
+      }
+      updateQueueNumbers();
+    }
+
+    function updateQueueNumbers() {
+      const items = document.querySelectorAll('#queueReorderList .queue-row-card');
+      items.forEach((item, idx) => {
+        const numEl = item.querySelector('.queue-idx-badge');
+        if (numEl) numEl.textContent = idx + 2;
+      });
+    }
+
+    function removeQueueItem(btn) {
+      const card = btn.closest('.queue-row-card');
+      if (card) {
+        card.remove();
+        updateQueueNumbers();
+      }
+    }
+
+    // Navigation Switch
+    function switchNav(tabIdx) {
+      const isDiscover = tabIdx === 0;
+      document.getElementById('pageDiscover').classList.toggle('active', isDiscover);
+      document.getElementById('pageMe').classList.toggle('active', !isDiscover);
+      document.getElementById('tabDiscoverBtn').classList.toggle('active', isDiscover);
+      document.getElementById('tabMeBtn').classList.toggle('active', !isDiscover);
+    }
+    let currentMeSubTab = 0;
+    let meSwipeStartX = 0;
+    let meSwipeStartY = 0;
+    let meSwipeCurrentX = 0;
+    let isMeSwiping = false;
+
+    function switchMeSub(subIdx) {
+      currentMeSubTab = Math.max(0, Math.min(2, subIdx));
+      for (let i = 0; i <= 2; i++) {
+        const btn = document.getElementById('subMe' + i);
+        if (btn) btn.classList.toggle('active', i === currentMeSubTab);
+      }
+      const track = document.getElementById('mePagerTrack');
+      if (track) {
+        track.style.transform = 'translateX(-' + (currentMeSubTab * 33.333333) + '%)';
+      }
+      const titles = ['我的收藏曲目', '本地已下载离线曲目', '近期播放历史'];
+      const hint = document.getElementById('meTabHintTitle');
+      if (hint) hint.innerText = titles[currentMeSubTab];
+    }
+
+    function onMePagerPointerDown(e) {
+      meSwipeStartX = e.clientX || (e.touches && e.touches[0].clientX) || 0;
+      meSwipeStartY = e.clientY || (e.touches && e.touches[0].clientY) || 0;
+      meSwipeCurrentX = meSwipeStartX;
+      isMeSwiping = true;
+
+      window.addEventListener('pointermove', onMePagerPointerMove);
+      window.addEventListener('pointerup', onMePagerPointerUp);
+      window.addEventListener('pointercancel', onMePagerPointerUp);
+    }
+
+    function onMePagerPointerMove(e) {
+      if (!isMeSwiping) return;
+      const curX = e.clientX || (e.touches && e.touches[0].clientX) || 0;
+      const curY = e.clientY || (e.touches && e.touches[0].clientY) || 0;
+      const dx = curX - meSwipeStartX;
+      const dy = curY - meSwipeStartY;
+
+      // Vertical scrolling dominates - cancel horizontal swipe
+      if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 12) {
+        isMeSwiping = false;
+        return;
+      }
+      meSwipeCurrentX = curX;
+    }
+
+    function onMePagerPointerUp(e) {
+      if (!isMeSwiping) return;
+      isMeSwiping = false;
+      window.removeEventListener('pointermove', onMePagerPointerMove);
+      window.removeEventListener('pointerup', onMePagerPointerUp);
+      window.removeEventListener('pointercancel', onMePagerPointerUp);
+
+      const dx = meSwipeCurrentX - meSwipeStartX;
+      const threshold = 35; // 35px swipe threshold
+      if (dx < -threshold && currentMeSubTab < 2) {
+        switchMeSub(currentMeSubTab + 1);
+      } else if (dx > threshold && currentMeSubTab > 0) {
+        switchMeSub(currentMeSubTab - 1);
+      } else {
+        switchMeSub(currentMeSubTab);
+      }
+    }
+
+    // =========================================================
+    // SEARCH & FILTERING (SILENT, NO POPUP/TOAST NOTIFICATION)
+    // =========================================================
+    function onInputSearchLive(val) {
+      const q = val.trim();
+      document.getElementById('btnClearSearchInput').classList.toggle('active', q.length > 0);
+
+      if (currentEdgeCase === 'offline') {
+        return; // Handled in offline mode
+      }
+
+      if (q === '') {
+        setEdgeState('normal');
+        return;
+      }
+
+      // Check if keyword matches sample database
+      const sampleSongs = ['搁浅', '晴天', '乌梅子酱', '夜曲', '七里香', '周杰伦', '李荣浩'];
+      const hasMatch = sampleSongs.some(s => s.toLowerCase().includes(q.toLowerCase()));
+
+      if (hasMatch) {
+        setEdgeState('normal');
+      } else {
+        setEdgeState('empty');
+      }
+    }
+
+    function clearSearchTextSilent() {
+      document.getElementById('phoneSearchBox').value = '';
+      document.getElementById('btnClearSearchInput').classList.remove('active');
+      setEdgeState('normal');
+    }
+
+    function searchForSilent(keyword) {
+      document.getElementById('phoneSearchBox').value = keyword;
+      document.getElementById('btnClearSearchInput').classList.add('active');
+      onInputSearchLive(keyword);
+    }
+
+    function clearSearchHistorySilent() {
+      document.getElementById('historyFlowSection').style.display = 'none';
+    }
+
+    // =========================================================
+    // EDGE CASES CONTROLLER (NORMAL / EMPTY / OFFLINE / ERROR)
+    // =========================================================
+    function setEdgeState(stateName) {
+      currentEdgeCase = stateName;
+
+      // Update Toolbar Pill State
+      document.getElementById('btnCaseNormal').classList.toggle('active', stateName === 'normal');
+      document.getElementById('btnCaseEmpty').classList.toggle('active', stateName === 'empty');
+      document.getElementById('btnCaseOffline').classList.toggle('active', stateName === 'offline');
+      document.getElementById('btnCaseError').classList.toggle('active', stateName === 'error');
+
+      const emptyBox = document.getElementById('emptySearchBox');
+      const netErrBox = document.getElementById('networkErrorBox');
+      const loadingBox = document.getElementById('loadingBufferingBox');
+      const mainList = document.getElementById('mainSongList');
+      const offlineStrip = document.getElementById('offlineStatusStrip');
+      const statusSignal = document.getElementById('statusSignalSvg');
+      const status5g = document.getElementById('status5gTag');
+
+      // Reset all views
+      emptyBox.classList.remove('visible');
+      netErrBox.classList.remove('visible');
+      loadingBox.classList.remove('visible');
+      mainList.style.display = 'flex';
+      offlineStrip.classList.remove('visible');
+      status5g.style.display = 'inline';
+      statusSignal.innerHTML = '<path d="M2 22h20V2z"/>';
+
+      // Reset disabled states on songs
+      ['rowGeqian', 'rowQingtian', 'rowWumei', 'rowYequ', 'rowQilixiang'].forEach(id => {
+        const row = document.getElementById(id);
+        if (row) row.classList.remove('is-offline-disabled');
+      });
+
+      if (stateName === 'normal') {
+        // Normal state: Full list visible
+      } else if (stateName === 'empty') {
+        mainList.style.display = 'none';
+        emptyBox.classList.add('visible');
+      } else if (stateName === 'offline') {
+        offlineStrip.classList.add('visible');
+        status5g.style.display = 'none';
+        // Show no signal slash in status bar
+        statusSignal.innerHTML = '<path d="M1.42 3.14L0 4.56l2.06 2.06C1.3 7.14.7 7.6.36 7.9L12 22.42l4.82-5.99 4.62 4.62 1.42-1.42L1.42 3.14z"/>';
+        // In offline mode: only local songs (搁浅, 七里香) are enabled; online songs (乌梅子酱, 夜曲) are disabled
+        ['rowWumei', 'rowYequ'].forEach(id => {
+          const row = document.getElementById(id);
+          if (row) row.classList.add('is-offline-disabled');
+        });
+      } else if (stateName === 'error') {
+        mainList.style.display = 'none';
+        netErrBox.classList.add('visible');
+      }
+    }
+
+    function retryNetworkCheck() {
+      // Simulate quick buffering recovery
+      document.getElementById('networkErrorBox').classList.remove('visible');
+      document.getElementById('loadingBufferingBox').classList.add('visible');
+
+      setTimeout(() => {
+        document.getElementById('loadingBufferingBox').classList.remove('visible');
+        setEdgeState('normal');
+      }, 700);
+    }
+
+    // =========================================================
+    // DEBUG LOG DIALOG & ONE-CLICK COPY IMPLEMENTATION
+    // =========================================================
+    function openDebugModal() {
+      document.getElementById('debugModalOverlay').classList.add('open');
+    }
+    function closeDebugModal() {
+      document.getElementById('debugModalOverlay').classList.remove('open');
+    }
+    function copyAllLogsToClipboard() {
+      const logsText = document.getElementById('debugCodeBox').innerText;
+      navigator.clipboard?.writeText(logsText).then(() => {
+        triggerToastDirect('已成功复制诊断日志，直接发送给 AI 即可！');
+      }).catch(() => {
+        triggerToastDirect('已复制到剪贴板');
+      });
+    }
+    function clearLogsData() {
+      document.getElementById('debugCodeBox').innerHTML = '<span class="log-line-info">[INFO] 日志已清空</span>';
+    }
+
+    // Direct Toast (Only used for Copy Feedback or Favorite Toggle)
+    let toastTimeout = null;
+    function triggerToastDirect(msg) {
+      const toast = document.getElementById('cleanToast');
+      toast.innerText = msg;
+      toast.classList.add('visible');
+      clearTimeout(toastTimeout);
+      toastTimeout = setTimeout(() => {
+        toast.classList.remove('visible');
+      }, 2000);
+    }
+
+    function copyTokenHex(hex) {
+      navigator.clipboard?.writeText(hex);
+      triggerToastDirect('已复制: ' + hex);
+    }
+
+    function toggleThemeMode() {
+      const cur = document.documentElement.getAttribute('data-theme');
+      const next = cur === 'dark' ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', next);
+    }
+
+    function switchViewMode(mode) {
+      document.getElementById('btnViewSplit').classList.toggle('active', mode === 'split');
+      document.getElementById('btnViewMockup').classList.toggle('active', mode === 'mockup');
+      document.getElementById('btnViewSpec').classList.toggle('active', mode === 'spec');
+
+      const spec = document.getElementById('specPane');
+      const mockup = document.getElementById('mockupPane');
+
+      if (mode === 'split') {
+        spec.style.display = 'flex';
+        mockup.style.display = 'flex';
+      } else if (mode === 'mockup') {
+        spec.style.display = 'none';
+        mockup.style.display = 'flex';
+      } else if (mode === 'spec') {
+        spec.style.display = 'flex';
+        mockup.style.display = 'none';
+      }
+    }
+
+    // Clock
+    function tickClock() {
+      const d = new Date();
+      const h = String(d.getHours()).padStart(2, '0');
+      const m = String(d.getMinutes()).padStart(2, '0');
+      document.getElementById('statusBarClock').innerText = `${h}:${m}`;
+    }
+    setInterval(tickClock, 30000);
+    tickClock();
+  </script>
+</body>
+</html>

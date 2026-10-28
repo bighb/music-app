@@ -72,9 +72,14 @@ import coil.compose.AsyncImage
 import com.personal.musicapp.data.local.DownloadState
 import com.personal.musicapp.data.model.Song
 import com.personal.musicapp.player.PlayerState
-import com.personal.musicapp.ui.components.DebugIconButton
 import com.personal.musicapp.ui.components.SongListItem
+import com.personal.musicapp.ui.theme.InkBlack
+import com.personal.musicapp.ui.theme.RosePrimary
+import com.personal.musicapp.ui.theme.RoseTint
+import com.personal.musicapp.ui.theme.SlateDark
+import com.personal.musicapp.ui.theme.SlateMuted
 
+@Suppress("UNUSED_PARAMETER")
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun DiscoverScreen(
@@ -125,31 +130,6 @@ fun DiscoverScreen(
             .fillMaxSize()
             .padding(horizontal = 16.dp)
     ) {
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Top Header Row with Debug Icon
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.GraphicEq,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(28.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "发现与搜索",
-                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
-                )
-            }
-
-            DebugIconButton(onClick = onOpenDebug)
-        }
-
         Spacer(modifier = Modifier.height(14.dp))
 
         // Search Input Bar
@@ -164,7 +144,7 @@ fun DiscoverScreen(
                     Text("搜索歌名、歌手或粘贴链接...", fontSize = 13.sp)
                 },
                 leadingIcon = {
-                    Icon(imageVector = Icons.Default.Search, contentDescription = "搜索")
+                    Icon(imageVector = Icons.Default.Search, contentDescription = "搜索", tint = SlateMuted)
                 },
                 trailingIcon = {
                     if (searchQuery.isNotEmpty()) {
@@ -172,7 +152,7 @@ fun DiscoverScreen(
                             onSearchQueryChange("")
                             onClearSearchResult()
                         }) {
-                            Icon(imageVector = Icons.Default.Clear, contentDescription = "清空")
+                            Icon(imageVector = Icons.Default.Clear, contentDescription = "清空", tint = SlateMuted)
                         }
                     }
                 },
@@ -186,12 +166,12 @@ fun DiscoverScreen(
                 colors = TextFieldDefaults.colors(
                     focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
                     unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                    focusedIndicatorColor = MaterialTheme.colorScheme.primary,
+                    focusedIndicatorColor = RosePrimary,
                     unfocusedIndicatorColor = Color.Transparent
                 ),
                 modifier = Modifier
                     .weight(1f)
-                    .height(56.dp)
+                    .height(54.dp)
             )
 
             Spacer(modifier = Modifier.width(8.dp))
@@ -209,7 +189,75 @@ fun DiscoverScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(14.dp))
+        // Search History Tags directly beneath search bar
+        if (searchHistory.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(10.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.History,
+                        contentDescription = null,
+                        tint = SlateMuted,
+                        modifier = Modifier.size(15.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "搜索历史",
+                        style = MaterialTheme.typography.labelMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            color = SlateDark
+                        )
+                    )
+                }
+
+                TextButton(
+                    onClick = onClearSearchHistory,
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.DeleteOutline,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp),
+                        tint = SlateMuted
+                    )
+                    Spacer(modifier = Modifier.width(2.dp))
+                    Text("清空", fontSize = 11.sp, color = SlateMuted)
+                }
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                searchHistory.forEach { item ->
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color(0xFFF3F4F6),
+                        modifier = Modifier.clickable {
+                            onSearchQueryChange(item)
+                            focusManager.clearFocus()
+                            onSelectHistoryQuery(item)
+                        }
+                    ) {
+                        Text(
+                            text = item,
+                            fontSize = 12.sp,
+                            color = SlateDark,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
 
         // Content Area: Loading, Error, Results, Empty State, or Default Dashboard
         when {
@@ -302,307 +350,144 @@ fun DiscoverScreen(
             }
 
             searchResults.isEmpty() -> {
-                // Default Home Dashboard: Quick Resume Card + Shortcuts + Search History
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
-                    contentPadding = PaddingValues(bottom = 90.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    // 1. Resume Last Playback Card
-                    val resumeCandidate = playerState.currentSong ?: playHistoryList.firstOrNull()
-                    if (resumeCandidate != null) {
-                        item {
-                            val isCurrentlyPlaying = playerState.isPlaying && playerState.currentSong?.id == resumeCandidate.id
-                            Surface(
-                                shape = RoundedCornerShape(16.dp),
-                                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f),
+                // Default Home: Quick Resume Card if present, or clean placeholder
+                val resumeCandidate = playerState.currentSong ?: playHistoryList.firstOrNull()
+                if (resumeCandidate != null) {
+                    val isCurrentlyPlaying = playerState.isPlaying && playerState.currentSong?.id == resumeCandidate.id
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                    ) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Surface(
+                            shape = RoundedCornerShape(16.dp),
+                            color = RoseTint,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(16.dp))
+                                .clickable {
+                                    if (playerState.currentSong?.id == resumeCandidate.id) {
+                                        onOpenFullPlayer()
+                                    } else {
+                                        onResumePlayback(resumeCandidate)
+                                    }
+                                }
+                        ) {
+                            Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clip(RoundedCornerShape(16.dp))
-                                    .clickable {
+                                    .padding(14.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(50.dp)
+                                        .clip(CircleShape)
+                                        .background(Color.Black)
+                                        .rotate(if (isCurrentlyPlaying) resumeRotation else 0f),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (resumeCandidate.displayCover.isNotEmpty()) {
+                                        AsyncImage(
+                                            model = resumeCandidate.displayCover,
+                                            contentDescription = resumeCandidate.title,
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentScale = ContentScale.Crop
+                                        )
+                                    } else {
+                                        Icon(
+                                            imageVector = Icons.Default.MusicNote,
+                                            contentDescription = null,
+                                            tint = Color.White,
+                                            modifier = Modifier.size(24.dp)
+                                        )
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.width(12.dp))
+
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = if (isCurrentlyPlaying) "正在播放" else if (playerState.currentSong?.id == resumeCandidate.id) "继续播放" else "最近播放 · 点击恢复",
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            color = RosePrimary,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = resumeCandidate.title,
+                                        style = MaterialTheme.typography.titleMedium.copy(
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = InkBlack
+                                        ),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = resumeCandidate.artist,
+                                        style = MaterialTheme.typography.bodySmall.copy(color = SlateMuted),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.width(8.dp))
+
+                                FilledIconButton(
+                                    onClick = {
                                         if (playerState.currentSong?.id == resumeCandidate.id) {
-                                            onOpenFullPlayer()
+                                            onTogglePlayPause()
                                         } else {
                                             onResumePlayback(resumeCandidate)
                                         }
-                                    }
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(14.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(50.dp)
-                                            .clip(CircleShape)
-                                            .background(Color.Black)
-                                            .rotate(if (isCurrentlyPlaying) resumeRotation else 0f),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        if (resumeCandidate.displayCover.isNotEmpty()) {
-                                            AsyncImage(
-                                                model = resumeCandidate.displayCover,
-                                                contentDescription = resumeCandidate.title,
-                                                modifier = Modifier.fillMaxSize(),
-                                                contentScale = ContentScale.Crop
-                                            )
-                                        } else {
-                                            Icon(
-                                                imageVector = Icons.Default.MusicNote,
-                                                contentDescription = null,
-                                                tint = Color.White,
-                                                modifier = Modifier.size(24.dp)
-                                            )
-                                        }
-                                    }
-
-                                    Spacer(modifier = Modifier.width(12.dp))
-
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = if (isCurrentlyPlaying) "正在播放" else if (playerState.currentSong?.id == resumeCandidate.id) "继续播放" else "最近播放 · 点击恢复",
-                                            style = MaterialTheme.typography.labelSmall.copy(
-                                                color = MaterialTheme.colorScheme.primary,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                        )
-                                        Spacer(modifier = Modifier.height(2.dp))
-                                        Text(
-                                            text = resumeCandidate.title,
-                                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                        Text(
-                                            text = resumeCandidate.artist,
-                                            style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                    }
-
-                                    Spacer(modifier = Modifier.width(8.dp))
-
-                                    FilledIconButton(
-                                        onClick = {
-                                            if (playerState.currentSong?.id == resumeCandidate.id) {
-                                                onTogglePlayPause()
-                                            } else {
-                                                onResumePlayback(resumeCandidate)
-                                            }
-                                        },
-                                        modifier = Modifier.size(42.dp),
-                                        colors = IconButtonDefaults.filledIconButtonColors(
-                                            containerColor = MaterialTheme.colorScheme.primary,
-                                            contentColor = MaterialTheme.colorScheme.onPrimary
-                                        )
-                                    ) {
-                                        Icon(
-                                            imageVector = if (isCurrentlyPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                            contentDescription = if (isCurrentlyPlaying) "暂停" else "播放",
-                                            modifier = Modifier.size(22.dp)
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // 2. High-frequency Shortcuts: Favorites, Downloads, History
-                    item {
-                        Column {
-                            Text(
-                                text = "快捷入口",
-                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold)
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                // Favorites Shortcut
-                                Surface(
-                                    shape = RoundedCornerShape(14.dp),
-                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .clip(RoundedCornerShape(14.dp))
-                                        .clickable { onNavigateToLibrary(0) }
-                                ) {
-                                    Column(
-                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 12.dp),
-                                        horizontalAlignment = Alignment.CenterHorizontally
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Favorite,
-                                            contentDescription = null,
-                                            tint = Color(0xFFFF2D55),
-                                            modifier = Modifier.size(24.dp)
-                                        )
-                                        Spacer(modifier = Modifier.height(4.dp))
-                                        Text(text = "我的收藏", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                                        Text(text = "${favoritesList.size} 首", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    }
-                                }
-
-                                // Downloads Shortcut
-                                Surface(
-                                    shape = RoundedCornerShape(14.dp),
-                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .clip(RoundedCornerShape(14.dp))
-                                        .clickable { onNavigateToLibrary(1) }
-                                ) {
-                                    Column(
-                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 12.dp),
-                                        horizontalAlignment = Alignment.CenterHorizontally
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Download,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.tertiary,
-                                            modifier = Modifier.size(24.dp)
-                                        )
-                                        Spacer(modifier = Modifier.height(4.dp))
-                                        Text(text = "我的下载", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                                        Text(text = "$downloadsCount 首", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    }
-                                }
-
-                                // Play History Shortcut
-                                Surface(
-                                    shape = RoundedCornerShape(14.dp),
-                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .clip(RoundedCornerShape(14.dp))
-                                        .clickable { onNavigateToLibrary(2) }
-                                ) {
-                                    Column(
-                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 12.dp),
-                                        horizontalAlignment = Alignment.CenterHorizontally
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.History,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.size(24.dp)
-                                        )
-                                        Spacer(modifier = Modifier.height(4.dp))
-                                        Text(text = "播放历史", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                                        Text(text = "${playHistoryList.size} 首", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // 3. Search History Section
-                    if (searchHistory.isNotEmpty()) {
-                        item {
-                            Column {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(
-                                            imageVector = Icons.Default.History,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text(
-                                            text = "搜索历史",
-                                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold)
-                                        )
-                                    }
-
-                                    TextButton(
-                                        onClick = onClearSearchHistory,
-                                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.DeleteOutline,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(14.dp),
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                        Spacer(modifier = Modifier.width(2.dp))
-                                        Text("清空历史", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    }
-                                }
-
-                                Spacer(modifier = Modifier.height(6.dp))
-
-                                FlowRow(
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    searchHistory.forEach { item ->
-                                        Surface(
-                                            shape = RoundedCornerShape(12.dp),
-                                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                                            modifier = Modifier.clickable {
-                                                onSearchQueryChange(item)
-                                                focusManager.clearFocus()
-                                                onSelectHistoryQuery(item)
-                                            }
-                                        ) {
-                                            Row(
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                modifier = Modifier.padding(start = 10.dp, end = 4.dp, top = 4.dp, bottom = 4.dp)
-                                            ) {
-                                                Text(text = item, fontSize = 12.sp)
-                                                Spacer(modifier = Modifier.width(4.dp))
-                                                IconButton(
-                                                    onClick = { onDeleteHistoryQuery(item) },
-                                                    modifier = Modifier.size(18.dp)
-                                                ) {
-                                                    Icon(
-                                                        imageVector = Icons.Default.Close,
-                                                        contentDescription = "删除记录",
-                                                        modifier = Modifier.size(12.dp),
-                                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // 4. Instructions Card
-                    item {
-                        Surface(
-                            shape = RoundedCornerShape(16.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Column(modifier = Modifier.padding(16.dp)) {
-                                Text(
-                                    text = "功能使用提示",
-                                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold)
-                                )
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Text(
-                                    text = "• 全网智能聚合：搜索周杰伦、热门单曲或直接粘贴分享链接即刻畅听。\n• 播放详情与下载：详情页提供独立下载按钮，离线歌曲保存在「我的下载」中脱网播放。\n• 播放队列管理：点击右下角队列抽屉，可查看当前播放序列、左滑移除或调整顺序。\n• 遇到问题：点击右上角 🐛 诊断面板可一键复制日志发给 AI 定位修复。",
-                                    style = MaterialTheme.typography.bodySmall.copy(
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        lineHeight = 20.sp
+                                    },
+                                    modifier = Modifier.size(42.dp),
+                                    colors = IconButtonDefaults.filledIconButtonColors(
+                                        containerColor = RosePrimary,
+                                        contentColor = Color.White
                                     )
-                                )
+                                ) {
+                                    Icon(
+                                        imageVector = if (isCurrentlyPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                        contentDescription = if (isCurrentlyPlaying) "暂停" else "播放",
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                }
                             }
+                        }
+                    }
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.padding(24.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Search,
+                                contentDescription = null,
+                                modifier = Modifier.size(54.dp),
+                                tint = SlateMuted.copy(alpha = 0.4f)
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = "全网多音源聚合搜索",
+                                style = MaterialTheme.typography.titleMedium.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    color = InkBlack
+                                )
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = "输入歌名、歌手或粘贴分享链接即可畅听",
+                                style = MaterialTheme.typography.bodySmall.copy(color = SlateMuted)
+                            )
                         }
                     }
                 }

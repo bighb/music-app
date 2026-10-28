@@ -1,7 +1,10 @@
 package com.personal.musicapp.ui.components
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,15 +26,15 @@ import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.GraphicEq
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Surface
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Tab
@@ -42,6 +45,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -49,7 +53,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -57,6 +65,11 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.personal.musicapp.data.model.Song
 import com.personal.musicapp.player.PlayerState
+import com.personal.musicapp.ui.theme.InkBlack
+import com.personal.musicapp.ui.theme.RosePrimary
+import com.personal.musicapp.ui.theme.RoseTint
+import com.personal.musicapp.ui.theme.SlateDark
+import com.personal.musicapp.ui.theme.SlateMuted
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -203,81 +216,31 @@ fun PlaylistBottomSheet(
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         itemsIndexed(playerState.playlist, key = { _, item -> item.id }) { index, song ->
-                            val isCurrent = song.id == playerState.currentSong?.id
-
-                            val dismissState = rememberSwipeToDismissBoxState(
-                                confirmValueChange = { dismissVal ->
-                                    if (dismissVal == SwipeToDismissBoxValue.EndToStart) {
-                                        onRemoveFromQueue(song.id)
-                                        true
-                                    } else {
-                                        false
-                                    }
-                                }
-                            )
-
-                            SwipeToDismissBox(
-                                state = dismissState,
-                                enableDismissFromStartToEnd = false,
-                                backgroundContent = {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .clip(RoundedCornerShape(8.dp))
-                                            .background(MaterialTheme.colorScheme.errorContainer)
-                                            .padding(end = 16.dp),
-                                        contentAlignment = Alignment.CenterEnd
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Delete,
-                                            contentDescription = "移除",
-                                            tint = MaterialTheme.colorScheme.onErrorContainer
-                                        )
-                                    }
-                                }
-                            ) {
+                            if (index == 0) {
+                                // Pinned Playing Track at Index 0 (Locked, no drag)
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(
-                                            if (isCurrent) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
-                                            else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
-                                        )
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(RoseTint)
+                                        .border(BorderStroke(1.dp, RosePrimary.copy(alpha = 0.35f)), RoundedCornerShape(10.dp))
                                         .clickable { onSelectSong(song) }
-                                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                                        .padding(horizontal = 10.dp, vertical = 8.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    // Cover or Soundwave Icon
                                     Box(
                                         modifier = Modifier
                                             .size(40.dp)
                                             .clip(RoundedCornerShape(6.dp))
-                                            .background(MaterialTheme.colorScheme.surfaceVariant),
+                                            .background(Color.Black),
                                         contentAlignment = Alignment.Center
                                     ) {
-                                        if (isCurrent) {
-                                            Icon(
-                                                imageVector = Icons.Default.GraphicEq,
-                                                contentDescription = "当前播放",
-                                                tint = MaterialTheme.colorScheme.primary,
-                                                modifier = Modifier.size(22.dp)
-                                            )
-                                        } else if (song.displayCover.isNotEmpty()) {
-                                            AsyncImage(
-                                                model = song.displayCover,
-                                                contentDescription = song.title,
-                                                modifier = Modifier.fillMaxWidth(),
-                                                contentScale = ContentScale.Crop
-                                            )
-                                        } else {
-                                            Icon(
-                                                imageVector = Icons.Default.MusicNote,
-                                                contentDescription = null,
-                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                modifier = Modifier.size(20.dp)
-                                            )
-                                        }
+                                        Icon(
+                                            imageVector = Icons.Default.GraphicEq,
+                                            contentDescription = "当前播放",
+                                            tint = RosePrimary,
+                                            modifier = Modifier.size(22.dp)
+                                        )
                                     }
 
                                     Spacer(modifier = Modifier.width(10.dp))
@@ -286,8 +249,8 @@ fun PlaylistBottomSheet(
                                         Text(
                                             text = song.title,
                                             style = MaterialTheme.typography.bodyMedium.copy(
-                                                fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
-                                                color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                                fontWeight = FontWeight.Bold,
+                                                color = InkBlack
                                             ),
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis
@@ -295,40 +258,175 @@ fun PlaylistBottomSheet(
                                         Text(
                                             text = song.artist,
                                             style = MaterialTheme.typography.bodySmall.copy(
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                color = RosePrimary
                                             ),
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis
                                         )
                                     }
 
-                                    // Reorder actions: Move Up & Move Down
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        if (index > 0) {
-                                            IconButton(
-                                                onClick = { onReorderQueue(index, index - 1) },
-                                                modifier = Modifier.size(28.dp)
-                                            ) {
+                                    Surface(
+                                        shape = RoundedCornerShape(4.dp),
+                                        color = RosePrimary.copy(alpha = 0.12f),
+                                        modifier = Modifier.padding(end = 4.dp)
+                                    ) {
+                                        Text(
+                                            text = "正在播放 · 置顶",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = RosePrimary,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+                            } else {
+                                // Pending Tracks (Index >= 1): Reorderable via Drag Handle
+                                val dismissState = rememberSwipeToDismissBoxState(
+                                    confirmValueChange = { dismissVal ->
+                                        if (dismissVal == SwipeToDismissBoxValue.EndToStart) {
+                                            onRemoveFromQueue(song.id)
+                                            true
+                                        } else {
+                                            false
+                                        }
+                                    }
+                                )
+
+                                SwipeToDismissBox(
+                                    state = dismissState,
+                                    enableDismissFromStartToEnd = false,
+                                    backgroundContent = {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(MaterialTheme.colorScheme.errorContainer)
+                                                .padding(end = 16.dp),
+                                            contentAlignment = Alignment.CenterEnd
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Delete,
+                                                contentDescription = "移除",
+                                                tint = MaterialTheme.colorScheme.onErrorContainer
+                                            )
+                                        }
+                                    }
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(Color(0xFFF9FAFB))
+                                            .border(BorderStroke(0.5.dp, Color(0xFFE5E7EB)), RoundedCornerShape(8.dp))
+                                            .clickable { onSelectSong(song) }
+                                            .padding(horizontal = 8.dp, vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        // Index number
+                                        Box(
+                                            modifier = Modifier
+                                                .size(24.dp)
+                                                .clip(RoundedCornerShape(4.dp))
+                                                .background(Color(0xFFF3F4F6)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = "${index + 1}",
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = SlateDark
+                                            )
+                                        }
+
+                                        Spacer(modifier = Modifier.width(8.dp))
+
+                                        // Cover Icon
+                                        Box(
+                                            modifier = Modifier
+                                                .size(38.dp)
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .background(Color(0xFFE5E7EB)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            if (song.displayCover.isNotEmpty()) {
+                                                AsyncImage(
+                                                    model = song.displayCover,
+                                                    contentDescription = song.title,
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    contentScale = ContentScale.Crop
+                                                )
+                                            } else {
                                                 Icon(
-                                                    imageVector = Icons.Default.KeyboardArrowUp,
-                                                    contentDescription = "上移",
-                                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    imageVector = Icons.Default.MusicNote,
+                                                    contentDescription = null,
+                                                    tint = SlateMuted,
                                                     modifier = Modifier.size(18.dp)
                                                 )
                                             }
                                         }
-                                        if (index < playerState.playlist.size - 1) {
-                                            IconButton(
-                                                onClick = { onReorderQueue(index, index + 1) },
-                                                modifier = Modifier.size(28.dp)
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Default.KeyboardArrowDown,
-                                                    contentDescription = "下移",
-                                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                    modifier = Modifier.size(18.dp)
-                                                )
-                                            }
+
+                                        Spacer(modifier = Modifier.width(10.dp))
+
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = song.title,
+                                                style = MaterialTheme.typography.bodyMedium.copy(
+                                                    fontWeight = FontWeight.Medium,
+                                                    color = InkBlack
+                                                ),
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            Text(
+                                                text = song.artist,
+                                                style = MaterialTheme.typography.bodySmall.copy(
+                                                    color = SlateMuted
+                                                ),
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+
+                                        // Drag Handle with Long-press Drag Reordering
+                                        var dragOffsetY by remember { mutableFloatStateOf(0f) }
+                                        val density = LocalDensity.current
+                                        val haptic = LocalHapticFeedback.current
+                                        val dragStepPx = with(density) { 56.dp.toPx() }
+
+                                        Box(
+                                            modifier = Modifier
+                                                .size(36.dp)
+                                                .pointerInput(index, playerState.playlist.size) {
+                                                    detectDragGesturesAfterLongPress(
+                                                        onDragStart = {
+                                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                            dragOffsetY = 0f
+                                                        },
+                                                        onDrag = { change, dragAmount ->
+                                                            change.consume()
+                                                            dragOffsetY += dragAmount.y
+                                                            if (dragOffsetY > dragStepPx && index < playerState.playlist.size - 1) {
+                                                                onReorderQueue(index, index + 1)
+                                                                dragOffsetY -= dragStepPx
+                                                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                            } else if (dragOffsetY < -dragStepPx && index > 1) {
+                                                                onReorderQueue(index, index - 1)
+                                                                dragOffsetY += dragStepPx
+                                                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                            }
+                                                        },
+                                                        onDragEnd = { dragOffsetY = 0f },
+                                                        onDragCancel = { dragOffsetY = 0f }
+                                                    )
+                                                },
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.DragHandle,
+                                                contentDescription = "长按拖拽调序",
+                                                tint = SlateMuted,
+                                                modifier = Modifier.size(20.dp)
+                                            )
                                         }
 
                                         // Remove from queue button
@@ -339,7 +437,7 @@ fun PlaylistBottomSheet(
                                             Icon(
                                                 imageVector = Icons.Default.Close,
                                                 contentDescription = "从队列移除",
-                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                tint = SlateMuted,
                                                 modifier = Modifier.size(18.dp)
                                             )
                                         }
@@ -395,8 +493,12 @@ fun PlaylistBottomSheet(
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(8.dp))
                                     .background(
-                                        if (isCurrent) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
-                                        else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)
+                                        if (isCurrent) RoseTint
+                                        else Color(0xFFF9FAFB)
+                                    )
+                                    .border(
+                                        BorderStroke(0.5.dp, if (isCurrent) RosePrimary.copy(alpha = 0.35f) else Color(0xFFE5E7EB)),
+                                        RoundedCornerShape(8.dp)
                                     )
                                     .clickable { onSelectSong(song) }
                                     .padding(horizontal = 8.dp, vertical = 6.dp),
@@ -406,7 +508,7 @@ fun PlaylistBottomSheet(
                                     modifier = Modifier
                                         .size(40.dp)
                                         .clip(RoundedCornerShape(6.dp))
-                                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                                        .background(Color(0xFFE5E7EB)),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     if (song.displayCover.isNotEmpty()) {
@@ -420,7 +522,7 @@ fun PlaylistBottomSheet(
                                         Icon(
                                             imageVector = Icons.Default.MusicNote,
                                             contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            tint = SlateMuted,
                                             modifier = Modifier.size(20.dp)
                                         )
                                     }
@@ -433,7 +535,7 @@ fun PlaylistBottomSheet(
                                         text = song.title,
                                         style = MaterialTheme.typography.bodyMedium.copy(
                                             fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
-                                            color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                            color = if (isCurrent) RosePrimary else InkBlack
                                         ),
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
@@ -441,7 +543,7 @@ fun PlaylistBottomSheet(
                                     Text(
                                         text = song.artist,
                                         style = MaterialTheme.typography.bodySmall.copy(
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            color = SlateMuted
                                         ),
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
@@ -455,7 +557,7 @@ fun PlaylistBottomSheet(
                                     Icon(
                                         imageVector = Icons.AutoMirrored.Filled.PlaylistAdd,
                                         contentDescription = "加入队列",
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        tint = SlateDark,
                                         modifier = Modifier.size(20.dp)
                                     )
                                 }

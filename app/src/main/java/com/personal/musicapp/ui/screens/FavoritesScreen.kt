@@ -1,5 +1,6 @@
 package com.personal.musicapp.ui.screens
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,6 +16,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DeleteOutline
@@ -33,9 +36,11 @@ import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -48,9 +53,14 @@ import androidx.compose.ui.unit.sp
 import com.personal.musicapp.data.local.DownloadState
 import com.personal.musicapp.data.model.Song
 import com.personal.musicapp.player.PlayerState
-import com.personal.musicapp.ui.components.DebugIconButton
 import com.personal.musicapp.ui.components.SongListItem
+import com.personal.musicapp.ui.theme.InkBlack
+import com.personal.musicapp.ui.theme.RosePrimary
+import com.personal.musicapp.ui.theme.SlateDark
+import com.personal.musicapp.ui.theme.SlateMuted
+import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun FavoritesScreen(
     favoritesList: List<Song>,
@@ -76,6 +86,19 @@ fun FavoritesScreen(
     onOpenDebug: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val pagerState = rememberPagerState(initialPage = selectedSubTab.coerceIn(0, 2), pageCount = { 3 })
+    val coroutineScope = rememberCoroutineScope()
+
+    LaunchedEffect(selectedSubTab) {
+        if (pagerState.currentPage != selectedSubTab) {
+            pagerState.animateScrollToPage(selectedSubTab)
+        }
+    }
+
+    LaunchedEffect(pagerState.currentPage) {
+        onSubTabChange(pagerState.currentPage)
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -83,64 +106,65 @@ fun FavoritesScreen(
     ) {
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Title Row with Debug Icon
+        // Title Row without Debug Icon
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.Favorite,
-                    contentDescription = null,
-                    tint = Color(0xFFFF2D55),
-                    modifier = Modifier.size(28.dp)
+            Icon(
+                imageVector = Icons.Default.Favorite,
+                contentDescription = null,
+                tint = RosePrimary,
+                modifier = Modifier.size(26.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = "我的",
+                style = MaterialTheme.typography.titleLarge.copy(
+                    fontWeight = FontWeight.Bold,
+                    color = InkBlack
                 )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "音乐库",
-                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
-                )
-            }
-
-            DebugIconButton(onClick = onOpenDebug)
+            )
         }
 
         Spacer(modifier = Modifier.height(12.dp))
 
         // Sub Tabs: [我的收藏] vs [我的下载] vs [播放历史]
         TabRow(
-            selectedTabIndex = selectedSubTab,
+            selectedTabIndex = pagerState.currentPage,
             containerColor = Color.Transparent,
-            contentColor = MaterialTheme.colorScheme.primary
+            contentColor = RosePrimary
         ) {
             Tab(
-                selected = selectedSubTab == 0,
-                onClick = { onSubTabChange(0) },
+                selected = pagerState.currentPage == 0,
+                onClick = { coroutineScope.launch { pagerState.animateScrollToPage(0) } },
                 text = {
                     Text(
                         text = "我的收藏 (${favoritesList.size})",
-                        fontWeight = if (selectedSubTab == 0) FontWeight.Bold else FontWeight.Normal
+                        fontWeight = if (pagerState.currentPage == 0) FontWeight.Bold else FontWeight.Normal,
+                        color = if (pagerState.currentPage == 0) RosePrimary else SlateDark
                     )
                 }
             )
             Tab(
-                selected = selectedSubTab == 1,
-                onClick = { onSubTabChange(1) },
+                selected = pagerState.currentPage == 1,
+                onClick = { coroutineScope.launch { pagerState.animateScrollToPage(1) } },
                 text = {
                     Text(
                         text = "我的下载 (${downloadsList.size})",
-                        fontWeight = if (selectedSubTab == 1) FontWeight.Bold else FontWeight.Normal
+                        fontWeight = if (pagerState.currentPage == 1) FontWeight.Bold else FontWeight.Normal,
+                        color = if (pagerState.currentPage == 1) RosePrimary else SlateDark
                     )
                 }
             )
             Tab(
-                selected = selectedSubTab == 2,
-                onClick = { onSubTabChange(2) },
+                selected = pagerState.currentPage == 2,
+                onClick = { coroutineScope.launch { pagerState.animateScrollToPage(2) } },
                 text = {
                     Text(
                         text = "播放历史 (${playHistoryList.size})",
-                        fontWeight = if (selectedSubTab == 2) FontWeight.Bold else FontWeight.Normal
+                        fontWeight = if (pagerState.currentPage == 2) FontWeight.Bold else FontWeight.Normal,
+                        color = if (pagerState.currentPage == 2) RosePrimary else SlateDark
                     )
                 }
             )
@@ -148,7 +172,13 @@ fun FavoritesScreen(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        when (selectedSubTab) {
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+        ) { page ->
+            when (page) {
             0 -> {
                 // ==================== TAB 0: 我的收藏 ====================
                 if (favoritesList.isNotEmpty()) {
@@ -539,5 +569,22 @@ fun FavoritesScreen(
                 }
             }
         }
+
+        // Discreet diagnosis log entry at bottom
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 72.dp, top = 4.dp),
+            horizontalArrangement = Arrangement.Center
+        ) {
+            TextButton(onClick = onOpenDebug) {
+                Text(
+                    text = "v1.2.0 · 诊断日志",
+                    fontSize = 11.sp,
+                    color = SlateMuted.copy(alpha = 0.6f)
+                )
+            }
+        }
     }
+}
 }
