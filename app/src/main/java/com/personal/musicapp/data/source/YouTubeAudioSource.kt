@@ -18,7 +18,14 @@ class YouTubeAudioSource(
     private val cookieProvider: () -> String? = { null }
 ) : AudioSource {
 
+    companion object {
+        const val SAFARI_USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15"
+    }
+
     override val sourceName: String = "YouTube"
+
+    @Volatile
+    private var cachedVisitorData: String? = null
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
@@ -95,10 +102,7 @@ class YouTubeAudioSource(
             val reqBuilder = Request.Builder()
                 .url("https://music.youtube.com/youtubei/v1/search")
                 .header("Content-Type", "application/json")
-                .header(
-                    "User-Agent",
-                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-                )
+                .header("User-Agent", SAFARI_USER_AGENT)
                 .post(payload.toString().toRequestBody("application/json".toMediaType()))
 
             applyAuthHeaders(reqBuilder, "https://music.youtube.com")
@@ -107,6 +111,9 @@ class YouTubeAudioSource(
                 if (!resp.isSuccessful) return@withContext emptyList()
                 val bodyStr = resp.body?.string() ?: return@withContext emptyList()
                 val root = JsonParser.parseString(bodyStr).asJsonObject
+                root.getAsJsonObject("responseContext")?.get("visitorData")?.asString?.let {
+                    if (it.isNotEmpty()) cachedVisitorData = it
+                }
                 return@withContext parseSearchResults(root)
             }
         } catch (e: Exception) {
@@ -287,28 +294,78 @@ class YouTubeAudioSource(
         }
     }
 
+    private suspend fun ensureVisitorData(videoId: String? = null): String? = withContext(Dispatchers.IO) {
+        val cached = cachedVisitorData
+        if (!cached.isNullOrEmpty()) return@withContext cached
+
+        try {
+            val url = if (!videoId.isNullOrEmpty()) {
+                "https://www.youtube.com/watch?v=$videoId"
+            } else {
+                "https://www.youtube.com"
+            }
+            val req = Request.Builder()
+                .url(url)
+                .header("User-Agent", SAFARI_USER_AGENT)
+                .header("Cookie", "PREF=hl=en&tz=UTC; SOCS=CAI")
+                .build()
+            client.newCall(req).execute().use { resp ->
+                if (resp.isSuccessful) {
+                    val html = resp.body?.string() ?: ""
+                    val regex = Regex("\"(?:visitorData|VISITOR_DATA)\":\"([^\"]+)\"")
+                    val match = regex.find(html)
+                    val vData = match?.groupValues?.get(1)
+                    if (!vData.isNullOrEmpty()) {
+                        cachedVisitorData = vData
+                        return@withContext vData
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+        return@withContext cachedVisitorData
+    }
+
     suspend fun resolveStreamUrl(videoId: String): String? = withContext(Dispatchers.IO) {
         try {
+            val visitorData = ensureVisitorData(videoId)
+            // Use VISIONOS client: InnerTube delivers non-throttled direct stream URLs without requiring PO tokens
+            val clientObj = JsonObject().apply {
+                addProperty("clientName", "VISIONOS")
+                addProperty("clientVersion", "1.02")
+                addProperty("deviceMake", "Apple")
+                addProperty("deviceModel", "RealityDevice17,1")
+                addProperty("userAgent", SAFARI_USER_AGENT)
+                addProperty("osName", "visionOS")
+                addProperty("osVersion", "26.5.23O471")
+                addProperty("hl", "en")
+                addProperty("timeZone", "UTC")
+                addProperty("utcOffsetMinutes", 0)
+                if (!visitorData.isNullOrEmpty()) {
+                    addProperty("visitorData", visitorData)
+                }
+            }
+
             val payload = JsonObject().apply {
                 add("context", JsonObject().apply {
-                    add("client", JsonObject().apply {
-                        addProperty("clientName", "ANDROID")
-                        addProperty("clientVersion", "20.10.38")
-                        addProperty("osName", "Android")
-                        addProperty("osVersion", "11")
-                        addProperty("hl", "zh-CN")
-                        addProperty("gl", "US")
-                    })
+                    add("client", clientObj)
                 })
                 addProperty("videoId", videoId)
+                add("playbackContext", JsonObject().apply {
+                    add("contentPlaybackContext", JsonObject().apply {
+                        addProperty("html5Preference", "HTML5_PREF_WANTS")
+                    })
+                })
                 addProperty("contentCheckOk", true)
                 addProperty("racyCheckOk", true)
             }
 
             val reqBuilder = Request.Builder()
-                .url("https://www.youtube.com/youtubei/v1/player")
+                .url("https://www.youtube.com/youtubei/v1/player?prettyPrint=false")
                 .header("Content-Type", "application/json")
-                .header("User-Agent", "com.google.android.youtube/20.10.38 (Linux; U; Android 11) gzip")
+                .header("User-Agent", SAFARI_USER_AGENT)
+                .header("X-Youtube-Client-Name", "101")
+                .header("X-Youtube-Client-Version", "1.02")
+                .header("Origin", "https://www.youtube.com")
                 .post(payload.toString().toRequestBody("application/json".toMediaType()))
 
             applyAuthHeaders(reqBuilder, "https://www.youtube.com")
@@ -347,26 +404,44 @@ class YouTubeAudioSource(
 
     private suspend fun fetchSongDetails(videoId: String): Song? = withContext(Dispatchers.IO) {
         try {
+            val visitorData = ensureVisitorData(videoId)
+            val clientObj = JsonObject().apply {
+                addProperty("clientName", "VISIONOS")
+                addProperty("clientVersion", "1.02")
+                addProperty("deviceMake", "Apple")
+                addProperty("deviceModel", "RealityDevice17,1")
+                addProperty("userAgent", SAFARI_USER_AGENT)
+                addProperty("osName", "visionOS")
+                addProperty("osVersion", "26.5.23O471")
+                addProperty("hl", "zh-CN")
+                addProperty("timeZone", "UTC")
+                addProperty("utcOffsetMinutes", 0)
+                if (!visitorData.isNullOrEmpty()) {
+                    addProperty("visitorData", visitorData)
+                }
+            }
+
             val payload = JsonObject().apply {
                 add("context", JsonObject().apply {
-                    add("client", JsonObject().apply {
-                        addProperty("clientName", "ANDROID")
-                        addProperty("clientVersion", "20.10.38")
-                        addProperty("osName", "Android")
-                        addProperty("osVersion", "11")
-                        addProperty("hl", "zh-CN")
-                        addProperty("gl", "US")
-                    })
+                    add("client", clientObj)
                 })
                 addProperty("videoId", videoId)
+                add("playbackContext", JsonObject().apply {
+                    add("contentPlaybackContext", JsonObject().apply {
+                        addProperty("html5Preference", "HTML5_PREF_WANTS")
+                    })
+                })
                 addProperty("contentCheckOk", true)
                 addProperty("racyCheckOk", true)
             }
 
             val reqBuilder = Request.Builder()
-                .url("https://www.youtube.com/youtubei/v1/player")
+                .url("https://www.youtube.com/youtubei/v1/player?prettyPrint=false")
                 .header("Content-Type", "application/json")
-                .header("User-Agent", "com.google.android.youtube/20.10.38 (Linux; U; Android 11) gzip")
+                .header("User-Agent", SAFARI_USER_AGENT)
+                .header("X-Youtube-Client-Name", "101")
+                .header("X-Youtube-Client-Version", "1.02")
+                .header("Origin", "https://www.youtube.com")
                 .post(payload.toString().toRequestBody("application/json".toMediaType()))
 
             applyAuthHeaders(reqBuilder, "https://www.youtube.com")

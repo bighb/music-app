@@ -14,6 +14,7 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import com.personal.musicapp.MusicApplication
 import com.personal.musicapp.data.model.Song
 import com.personal.musicapp.data.source.KuwoAudioHelper
+import com.personal.musicapp.data.source.YouTubeAudioSource
 import com.personal.musicapp.util.AppLogger
 import com.personal.musicapp.util.awaitResponse
 import kotlinx.coroutines.CoroutineScope
@@ -47,7 +48,7 @@ class MusicPlayerManager(private val context: Context) {
         .build()
 
     private val httpDataSourceFactory = DefaultHttpDataSource.Factory()
-        .setUserAgent("Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36")
+        .setUserAgent(YouTubeAudioSource.SAFARI_USER_AGENT)
         .setAllowCrossProtocolRedirects(true)
         .setConnectTimeoutMs(15000)
         .setReadTimeoutMs(20000)

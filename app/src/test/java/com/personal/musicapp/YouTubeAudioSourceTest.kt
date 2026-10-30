@@ -49,22 +49,28 @@ class YouTubeAudioSourceTest {
     @Test
     fun testYouTubeStreamResolution() = runBlocking {
         val yt = YouTubeAudioSource()
-        val streamUrl = yt.resolveStreamUrl("DYptgVvkVLQ")
+        // Test with the exact song that failed in debug logs (Jay Chou - Greatest Works)
+        val videoId = "88ed1o89xEo"
+        val streamUrl = yt.resolveStreamUrl(videoId)
 
         println("Resolved stream URL: $streamUrl")
         assertNotNull("Stream URL must be resolved", streamUrl)
         assertTrue("Stream URL must be http/https", streamUrl!!.startsWith("http"))
 
-        // Verify direct streaming playback with Range request
+        // Verify direct streaming playback with unbounded Range request (ExoPlayer behavior)
         val client = OkHttpClient()
         val req = Request.Builder()
             .url(streamUrl)
-            .header("Range", "bytes=0-100")
+            .header("Range", "bytes=0-")
+            .header("User-Agent", YouTubeAudioSource.SAFARI_USER_AGENT)
             .build()
 
         client.newCall(req).execute().use { resp ->
             println("Stream Range Response code: ${resp.code}")
-            assertTrue("Stream request should return 200 or 206", resp.code in 200..206)
+            assertTrue("Stream request should return 200 or 206 (not 403 Forbidden)", resp.code in 200..206)
+            val bytes = resp.body?.byteStream()?.readNBytes(32768)
+            assertNotNull("Audio chunk should be readable", bytes)
+            assertTrue("Should read non-empty audio data", bytes!!.isNotEmpty())
         }
     }
 
