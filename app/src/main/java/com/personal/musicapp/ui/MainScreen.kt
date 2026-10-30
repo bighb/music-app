@@ -33,6 +33,7 @@ import com.personal.musicapp.ui.components.DebugLogDialog
 import com.personal.musicapp.ui.components.FullPlayerDialog
 import com.personal.musicapp.ui.components.MiniPlayerBar
 import com.personal.musicapp.ui.components.PlaylistBottomSheet
+import com.personal.musicapp.ui.components.YouTubeLoginDialog
 import com.personal.musicapp.ui.screens.DiscoverScreen
 import com.personal.musicapp.ui.screens.FavoritesScreen
 import com.personal.musicapp.util.AppLogger
@@ -54,6 +55,7 @@ fun MainScreen(
     val downloadStatusMap by localRepo.downloadStates.collectAsState()
     val playHistoryList by localRepo.playHistory.collectAsState()
     val searchHistory by localRepo.searchHistory.collectAsState()
+    val youtubeCookie by localRepo.youtubeCookie.collectAsState()
 
     var selectedTab by remember { mutableIntStateOf(0) }
     var librarySubTab by remember { mutableIntStateOf(0) }
@@ -65,6 +67,7 @@ fun MainScreen(
     var showFullPlayer by remember { mutableStateOf(false) }
     var showQueueSheet by remember { mutableStateOf(false) }
     var showDebugDialog by remember { mutableStateOf(false) }
+    var showYouTubeLoginDialog by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
 
     fun parseAndPlay(linkOrText: String) {
@@ -327,6 +330,10 @@ fun MainScreen(
                         },
                         onOpenDebug = {
                             showDebugDialog = true
+                        },
+                        youtubeCookie = youtubeCookie,
+                        onOpenYouTubeAuth = {
+                            showYouTubeLoginDialog = true
                         }
                     )
                 }
@@ -489,6 +496,27 @@ fun MainScreen(
     if (showDebugDialog) {
         DebugLogDialog(
             onDismiss = { showDebugDialog = false }
+        )
+    }
+
+    if (showYouTubeLoginDialog) {
+        YouTubeLoginDialog(
+            currentCookie = youtubeCookie,
+            onSaveCookie = { cookie ->
+                localRepo.saveYouTubeCookie(cookie)
+                coroutineScope.launch {
+                    snackbarHostState.showSnackbar("YouTube 会员凭证已激活")
+                }
+            },
+            onClearCookie = {
+                localRepo.clearYouTubeCookie()
+                coroutineScope.launch {
+                    snackbarHostState.showSnackbar("已清除 YouTube 凭证")
+                }
+            },
+            onDismiss = {
+                showYouTubeLoginDialog = false
+            }
         )
     }
 }

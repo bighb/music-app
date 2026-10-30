@@ -27,7 +27,7 @@ class MusicApplication : Application() {
 
         localRepository = LocalMusicRepository(this)
         playerManager = MusicPlayerManager(this)
-        audioSourceManager = AudioSourceManager()
+        audioSourceManager = AudioSourceManager(cookieProvider = { localRepository.youtubeCookie.value })
     }
 
     override fun onTerminate() {

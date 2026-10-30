@@ -265,7 +265,28 @@ class MusicPlayerManager(private val context: Context) {
 
     private suspend fun resolveMediaDirectUrl(song: Song): String? = withContext(Dispatchers.IO) {
         val rawUrl = song.audioUrl
-        if (!rawUrl.startsWith("http") && !rawUrl.startsWith("kuwo://")) return@withContext rawUrl
+        if (!rawUrl.startsWith("http") && !rawUrl.startsWith("kuwo://") && !rawUrl.startsWith("youtube://")) return@withContext rawUrl
+
+        // 0. YouTube protocol (youtube://$videoId)
+        if (rawUrl.startsWith("youtube://")) {
+            val videoId = rawUrl.removePrefix("youtube://")
+            try {
+                val streamUrl = MusicApplication.instance.audioSourceManager.resolveYouTubeStream(videoId)
+                if (!streamUrl.isNullOrEmpty() && streamUrl.startsWith("http")) {
+                    return@withContext streamUrl
+                }
+            } catch (e: Exception) {
+                AppLogger.w(tag, "YouTube stream resolve failed for $videoId", e)
+            }
+
+            // Fallback: search Kuwo by title if YouTube stream fails
+            val fallbackUrl = KuwoAudioHelper.getPlayableUrl(song.title, song.artist)
+            if (!fallbackUrl.isNullOrEmpty()) {
+                AppLogger.i(tag, "Fallback from YouTube to Kuwo search stream for 《${song.title}》")
+                return@withContext fallbackUrl
+            }
+            return@withContext null
+        }
 
         // 1. Kuwo protocol (kuwo://$rid)
         if (rawUrl.startsWith("kuwo://")) {

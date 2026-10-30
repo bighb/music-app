@@ -110,6 +110,8 @@ fun DiscoverScreen(
     onPlayNext: (Song) -> Unit,
     onAddToPlaylist: (Song) -> Unit,
     onOpenDebug: () -> Unit,
+    youtubeCookie: String? = null,
+    onOpenYouTubeAuth: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val focusManager = LocalFocusManager.current
@@ -130,7 +132,58 @@ fun DiscoverScreen(
             .fillMaxSize()
             .padding(horizontal = 16.dp)
     ) {
-        Spacer(modifier = Modifier.height(14.dp))
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // Top Header: App Title & YouTube Auth Status Pill
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "发现音乐",
+                style = MaterialTheme.typography.titleLarge.copy(
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            )
+
+            Surface(
+                onClick = onOpenYouTubeAuth,
+                shape = RoundedCornerShape(20.dp),
+                color = if (!youtubeCookie.isNullOrBlank()) Color(0xFF2E7D32).copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                modifier = Modifier.height(30.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(14.dp)
+                            .clip(CircleShape)
+                            .background(if (!youtubeCookie.isNullOrBlank()) Color(0xFF2E7D32) else Color(0xFFFF0000)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.PlayArrow,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(10.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = if (!youtubeCookie.isNullOrBlank()) "YouTube 会员" else "YouTube 登录",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = if (!youtubeCookie.isNullOrBlank()) Color(0xFF2E7D32) else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
 
         // Search Input Bar
         Row(

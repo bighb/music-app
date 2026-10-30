@@ -3,6 +3,7 @@ package com.personal.musicapp.data.local
 import android.content.Context
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import com.personal.musicapp.MusicApplication
 import com.personal.musicapp.data.model.Song
 import com.personal.musicapp.data.source.KuwoAudioHelper
 import com.personal.musicapp.util.AppLogger
@@ -59,11 +60,15 @@ class LocalMusicRepository(private val context: Context) {
     private val _searchHistory = MutableStateFlow<List<String>>(emptyList())
     val searchHistory: StateFlow<List<String>> = _searchHistory.asStateFlow()
 
+    private val _youtubeCookie = MutableStateFlow<String?>(null)
+    val youtubeCookie: StateFlow<String?> = _youtubeCookie.asStateFlow()
+
     init {
         loadFavorites()
         loadDownloads()
         loadPlayHistory()
         loadSearchHistory()
+        _youtubeCookie.value = prefs.getString("youtube_cookie", null)
     }
 
     // ==================== Favorites ====================
@@ -317,6 +322,19 @@ class LocalMusicRepository(private val context: Context) {
 
     private suspend fun resolveDownloadUrl(song: Song): String? {
         val raw = song.audioUrl
+        if (raw.startsWith("youtube://")) {
+            val videoId = raw.removePrefix("youtube://")
+            try {
+                val streamUrl = MusicApplication.instance.audioSourceManager.resolveYouTubeStream(videoId)
+                if (!streamUrl.isNullOrEmpty() && streamUrl.startsWith("http")) {
+                    return streamUrl
+                }
+            } catch (e: Exception) {
+                AppLogger.w(tag, "YouTube stream resolve failed for $videoId", e)
+            }
+            return KuwoAudioHelper.getPlayableUrl(song.title, song.artist)
+        }
+
         if (raw.startsWith("kuwo://")) {
             val rid = raw.removePrefix("kuwo://")
             val convertUrl = "http://antiserver.kuwo.cn/anti.s?type=convert_url&rid=$rid&format=mp3&response=url"
@@ -500,5 +518,18 @@ class LocalMusicRepository(private val context: Context) {
     fun clearSearchHistory() {
         _searchHistory.value = emptyList()
         prefs.edit().remove("search_history_v1").apply()
+    }
+
+    fun saveYouTubeCookie(cookie: String) {
+        val cleanCookie = cookie.trim()
+        _youtubeCookie.value = cleanCookie
+        prefs.edit().putString("youtube_cookie", cleanCookie).apply()
+        AppLogger.i(tag, "Saved YouTube cookie (${cleanCookie.length} chars)")
+    }
+
+    fun clearYouTubeCookie() {
+        _youtubeCookie.value = null
+        prefs.edit().remove("youtube_cookie").apply()
+        AppLogger.i(tag, "Cleared YouTube cookie")
     }
 }
