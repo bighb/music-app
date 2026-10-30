@@ -344,7 +344,9 @@ class LocalMusicRepository(private val context: Context) {
                 client.newCall(req).execute().use { resp ->
                     val streamUrl = resp.body?.string()?.trim()
                     if (!streamUrl.isNullOrEmpty() && streamUrl.startsWith("http")) {
-                        return streamUrl
+                        if (!KuwoAudioHelper.isKuwoPromoAudio(streamUrl)) {
+                            return streamUrl
+                        }
                     }
                 }
             } catch (e: Exception) {

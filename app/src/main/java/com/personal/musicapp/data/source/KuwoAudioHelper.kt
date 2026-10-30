@@ -19,6 +19,11 @@ object KuwoAudioHelper {
         .readTimeout(4, TimeUnit.SECONDS)
         .build()
 
+    fun isKuwoPromoAudio(url: String): Boolean {
+        // Kuwo replaces VIP/digital album songs with an 11-second promo audio (588957081.mp3) saying "去酷我最新app听"
+        return url.contains("588957081.mp3")
+    }
+
     private fun cleanHtmlEntities(str: String): String {
         return str
             .replace("&nbsp;", " ")
@@ -99,8 +104,12 @@ object KuwoAudioHelper {
                     if (resp.isSuccessful) {
                         val streamUrl = resp.body?.string()?.trim()
                         if (!streamUrl.isNullOrEmpty() && streamUrl.startsWith("http")) {
-                            Log.d(TAG, "Successfully resolved Kuwo stream for '$query' (rid=$songRid): $streamUrl")
-                            return streamUrl
+                            if (isKuwoPromoAudio(streamUrl)) {
+                                Log.w(TAG, "Kuwo stream for '$query' (rid=$songRid) is copyright promo audio, skipping")
+                            } else {
+                                Log.d(TAG, "Successfully resolved Kuwo stream for '$query' (rid=$songRid): $streamUrl")
+                                return streamUrl
+                            }
                         }
                     }
                 }

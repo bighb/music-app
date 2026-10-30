@@ -302,7 +302,11 @@ class MusicPlayerManager(private val context: Context) {
                 redirectResolverClient.newCall(req).awaitResponse().use { resp ->
                     val streamUrl = resp.body?.string()?.trim()
                     if (!streamUrl.isNullOrEmpty() && streamUrl.startsWith("http")) {
-                        return@withContext streamUrl
+                        if (KuwoAudioHelper.isKuwoPromoAudio(streamUrl)) {
+                            AppLogger.w(tag, "Kuwo stream for rid $rid is copyright promo audio (588957081.mp3), ignoring")
+                        } else {
+                            return@withContext streamUrl
+                        }
                     }
                 }
             } catch (e: Exception) {
