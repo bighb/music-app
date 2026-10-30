@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.outlined.CloudDone
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -82,6 +83,8 @@ fun FavoritesScreen(
     onShuffleAllFavorites: () -> Unit,
     onPlayAllDownloads: () -> Unit,
     onShuffleAllDownloads: () -> Unit,
+    onPlayAllHistory: () -> Unit = {},
+    onShuffleAllHistory: () -> Unit = {},
     onNavigateToDiscover: () -> Unit,
     onOpenDebug: () -> Unit,
     modifier: Modifier = Modifier
@@ -106,25 +109,39 @@ fun FavoritesScreen(
     ) {
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Title Row without Debug Icon
+        // Title Row with discreet Debug Log button on the right
         Row(
             modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                imageVector = Icons.Default.Favorite,
-                contentDescription = null,
-                tint = RosePrimary,
-                modifier = Modifier.size(26.dp)
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = "我的",
-                style = MaterialTheme.typography.titleLarge.copy(
-                    fontWeight = FontWeight.Bold,
-                    color = InkBlack
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.Favorite,
+                    contentDescription = null,
+                    tint = RosePrimary,
+                    modifier = Modifier.size(26.dp)
                 )
-            )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "我的",
+                    style = MaterialTheme.typography.titleLarge.copy(
+                        fontWeight = FontWeight.Bold,
+                        color = InkBlack
+                    )
+                )
+            }
+
+            TextButton(
+                onClick = onOpenDebug,
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+            ) {
+                Text(
+                    text = "v1.2.0 · 诊断日志",
+                    fontSize = 11.sp,
+                    color = SlateMuted.copy(alpha = 0.7f)
+                )
+            }
         }
 
         Spacer(modifier = Modifier.height(12.dp))
@@ -182,112 +199,114 @@ fun FavoritesScreen(
             0 -> {
                 // ==================== TAB 0: 我的收藏 ====================
                 if (favoritesList.isNotEmpty()) {
-                    val offlineCount = favoritesList.count { song ->
-                        downloadsList.any { it.id == song.id } || (song.localAudioPath != null && java.io.File(song.localAudioPath).exists())
-                    }
-
-                    // Summary Card
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                        tonalElevation = 2.dp
+                    Column(
+                        modifier = Modifier.fillMaxSize()
                     ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 12.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                        val offlineCount = favoritesList.count { song ->
+                            downloadsList.any { it.id == song.id } || (song.localAudioPath != null && java.io.File(song.localAudioPath).exists())
+                        }
+
+                        // Summary Card
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(16.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                            tonalElevation = 2.dp
                         ) {
-                            Column {
-                                Text(
-                                    text = "共 ${favoritesList.size} 首收藏歌曲",
-                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
-                                )
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.padding(top = 2.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Outlined.CloudDone,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.tertiary,
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column {
                                     Text(
-                                        text = "其中 $offlineCount 首已离线缓存",
-                                        style = MaterialTheme.typography.bodySmall.copy(
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
+                                        text = "共 ${favoritesList.size} 首收藏歌曲",
+                                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
                                     )
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.padding(top = 2.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.CloudDone,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.tertiary,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = "其中 $offlineCount 首已离线缓存",
+                                            style = MaterialTheme.typography.bodySmall.copy(
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        )
+                                    }
                                 }
-                            }
 
-                            Row {
-                                Button(
-                                    onClick = onPlayAllFavorites,
-                                    shape = RoundedCornerShape(12.dp),
-                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                                ) {
-                                    Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("播放", fontSize = 13.sp)
-                                }
+                                Row {
+                                    Button(
+                                        onClick = onPlayAllFavorites,
+                                        shape = RoundedCornerShape(12.dp),
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                    ) {
+                                        Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("播放", fontSize = 13.sp)
+                                    }
 
-                                Spacer(modifier = Modifier.width(8.dp))
+                                    Spacer(modifier = Modifier.width(8.dp))
 
-                                OutlinedButton(
-                                    onClick = onShuffleAllFavorites,
-                                    shape = RoundedCornerShape(12.dp),
-                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
-                                ) {
-                                    Icon(imageVector = Icons.Default.Shuffle, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    OutlinedButton(
+                                        onClick = onShuffleAllFavorites,
+                                        shape = RoundedCornerShape(12.dp),
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                                    ) {
+                                        Icon(imageVector = Icons.Default.Shuffle, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    }
                                 }
                             }
                         }
-                    }
 
-                    Spacer(modifier = Modifier.height(10.dp))
+                        Spacer(modifier = Modifier.height(10.dp))
 
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
-                        contentPadding = PaddingValues(bottom = 90.dp)
-                    ) {
-                        items(favoritesList, key = { it.id }) { song ->
-                            val isCurrent = playerState.currentSong?.id == song.id
-                            val isBuffering = isCurrent && playerState.isBuffering
-                            val hasError = isCurrent && playerState.playerError != null
-                            val isDownloaded = downloadsList.any { it.id == song.id } || (song.localAudioPath != null && java.io.File(song.localAudioPath).exists())
-                            val isDownloading = downloadStatusMap[song.id] is DownloadState.Downloading
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                            contentPadding = PaddingValues(bottom = 120.dp)
+                        ) {
+                            items(favoritesList, key = { it.id }) { song ->
+                                val isCurrent = playerState.currentSong?.id == song.id
+                                val isBuffering = isCurrent && playerState.isBuffering
+                                val hasError = isCurrent && playerState.playerError != null
+                                val isDownloaded = downloadsList.any { it.id == song.id } || (song.localAudioPath != null && java.io.File(song.localAudioPath).exists())
+                                val isDownloading = downloadStatusMap[song.id] is DownloadState.Downloading
 
-                            SongListItem(
-                                song = song,
-                                isPlaying = isCurrent,
-                                isFavorited = true,
-                                isBuffering = isBuffering,
-                                hasError = hasError,
-                                isDownloaded = isDownloaded,
-                                isDownloading = isDownloading,
-                                onClick = { onSongClick(song, favoritesList) },
-                                onDownload = { onDownload(song) },
-                                onDeleteDownload = { onDeleteDownload(song) },
-                                onPlayNext = { onPlayNext(song) },
-                                onAddToPlaylist = { onAddToPlaylist(song) },
-                                onRemove = { onToggleFavorite(song) }
-                            )
+                                SongListItem(
+                                    song = song,
+                                    isPlaying = isCurrent,
+                                    isFavorited = true,
+                                    isBuffering = isBuffering,
+                                    hasError = hasError,
+                                    isDownloaded = isDownloaded,
+                                    isDownloading = isDownloading,
+                                    onClick = { onSongClick(song, favoritesList) },
+                                    onDownload = { onDownload(song) },
+                                    onDeleteDownload = { onDeleteDownload(song) },
+                                    onPlayNext = { onPlayNext(song) },
+                                    onAddToPlaylist = { onAddToPlaylist(song) },
+                                    onRemove = { onToggleFavorite(song) }
+                                )
+                            }
                         }
                     }
                 } else {
                     // Empty State for Favorites
                     Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f),
+                        modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
                     ) {
                         Column(
@@ -334,105 +353,107 @@ fun FavoritesScreen(
             1 -> {
                 // ==================== TAB 1: 我的下载 ====================
                 if (downloadsList.isNotEmpty()) {
-                    // Summary Card
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                        tonalElevation = 2.dp
+                    Column(
+                        modifier = Modifier.fillMaxSize()
                     ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 12.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                        // Summary Card
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(16.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                            tonalElevation = 2.dp
                         ) {
-                            Column {
-                                Text(
-                                    text = "共 ${downloadsList.size} 首离线歌曲",
-                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
-                                )
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.padding(top = 2.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Outlined.CloudDone,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.tertiary,
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column {
                                     Text(
-                                        text = "已存储在手机本地，完全支持断网脱机畅听",
-                                        style = MaterialTheme.typography.bodySmall.copy(
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
+                                        text = "共 ${downloadsList.size} 首离线歌曲",
+                                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
                                     )
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.padding(top = 2.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.CloudDone,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.tertiary,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = "已存储在手机本地，完全支持断网脱机畅听",
+                                            style = MaterialTheme.typography.bodySmall.copy(
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        )
+                                    }
                                 }
-                            }
 
-                            Row {
-                                Button(
-                                    onClick = onPlayAllDownloads,
-                                    shape = RoundedCornerShape(12.dp),
-                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                                ) {
-                                    Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("播放", fontSize = 13.sp)
-                                }
+                                Row {
+                                    Button(
+                                        onClick = onPlayAllDownloads,
+                                        shape = RoundedCornerShape(12.dp),
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                    ) {
+                                        Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("播放", fontSize = 13.sp)
+                                    }
 
-                                Spacer(modifier = Modifier.width(8.dp))
+                                    Spacer(modifier = Modifier.width(8.dp))
 
-                                OutlinedButton(
-                                    onClick = onShuffleAllDownloads,
-                                    shape = RoundedCornerShape(12.dp),
-                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
-                                ) {
-                                    Icon(imageVector = Icons.Default.Shuffle, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    OutlinedButton(
+                                        onClick = onShuffleAllDownloads,
+                                        shape = RoundedCornerShape(12.dp),
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                                    ) {
+                                        Icon(imageVector = Icons.Default.Shuffle, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    }
                                 }
                             }
                         }
-                    }
 
-                    Spacer(modifier = Modifier.height(10.dp))
+                        Spacer(modifier = Modifier.height(10.dp))
 
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
-                        contentPadding = PaddingValues(bottom = 90.dp)
-                    ) {
-                        items(downloadsList, key = { "download_${it.id}" }) { song ->
-                            val isCurrent = playerState.currentSong?.id == song.id
-                            val isBuffering = isCurrent && playerState.isBuffering
-                            val hasError = isCurrent && playerState.playerError != null
-                            val isFavorited = favoritesList.any { it.id == song.id }
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                            contentPadding = PaddingValues(bottom = 120.dp)
+                        ) {
+                            items(downloadsList, key = { "download_${it.id}" }) { song ->
+                                val isCurrent = playerState.currentSong?.id == song.id
+                                val isBuffering = isCurrent && playerState.isBuffering
+                                val hasError = isCurrent && playerState.playerError != null
+                                val isFavorited = favoritesList.any { it.id == song.id }
 
-                            SongListItem(
-                                song = song,
-                                isPlaying = isCurrent,
-                                isFavorited = isFavorited,
-                                isBuffering = isBuffering,
-                                hasError = hasError,
-                                isDownloaded = true,
-                                onClick = { onSongClick(song, downloadsList) },
-                                onDeleteDownload = { onDeleteDownload(song) },
-                                onPlayNext = { onPlayNext(song) },
-                                onAddToPlaylist = { onAddToPlaylist(song) },
-                                onRemove = { onDeleteDownload(song) }
-                            )
+                                SongListItem(
+                                    song = song,
+                                    isPlaying = isCurrent,
+                                    isFavorited = isFavorited,
+                                    isBuffering = isBuffering,
+                                    hasError = hasError,
+                                    isDownloaded = true,
+                                    onClick = { onSongClick(song, downloadsList) },
+                                    onDeleteDownload = { onDeleteDownload(song) },
+                                    onPlayNext = { onPlayNext(song) },
+                                    onAddToPlaylist = { onAddToPlaylist(song) },
+                                    onRemove = { onDeleteDownload(song) }
+                                )
+                            }
                         }
                     }
                 } else {
                     // Empty State for Downloads
                     Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f),
+                        modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
                     ) {
                         Column(
@@ -479,67 +500,113 @@ fun FavoritesScreen(
             2 -> {
                 // ==================== TAB 2: 播放历史 ====================
                 if (playHistoryList.isNotEmpty()) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                    Column(
+                        modifier = Modifier.fillMaxSize()
                     ) {
-                        Text(
-                            text = "最近播放（共 ${playHistoryList.size} 首）",
-                            style = MaterialTheme.typography.titleSmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        )
+                        // Summary Card with full operation buttons
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(16.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                            tonalElevation = 2.dp
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column {
+                                    Text(
+                                        text = "共 ${playHistoryList.size} 首历史播放",
+                                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                                    )
+                                    Text(
+                                        text = "最近播过的音乐记录",
+                                        style = MaterialTheme.typography.bodySmall.copy(
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        ),
+                                        modifier = Modifier.padding(top = 2.dp)
+                                    )
+                                }
 
-                        TextButton(onClick = onClearHistory) {
-                            Icon(
-                                imageVector = Icons.Default.DeleteOutline,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp),
-                                tint = MaterialTheme.colorScheme.error
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("清空历史", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Button(
+                                        onClick = onPlayAllHistory,
+                                        shape = RoundedCornerShape(12.dp),
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                    ) {
+                                        Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("播放", fontSize = 13.sp)
+                                    }
+
+                                    Spacer(modifier = Modifier.width(6.dp))
+
+                                    OutlinedButton(
+                                        onClick = onShuffleAllHistory,
+                                        shape = RoundedCornerShape(12.dp),
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                                    ) {
+                                        Icon(imageVector = Icons.Default.Shuffle, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    }
+
+                                    Spacer(modifier = Modifier.width(6.dp))
+
+                                    IconButton(
+                                        onClick = onClearHistory,
+                                        modifier = Modifier.size(36.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.DeleteOutline,
+                                            contentDescription = "清空历史",
+                                            tint = MaterialTheme.colorScheme.error,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                }
+                            }
                         }
-                    }
 
-                    Spacer(modifier = Modifier.height(6.dp))
+                        Spacer(modifier = Modifier.height(10.dp))
 
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
-                        contentPadding = PaddingValues(bottom = 90.dp)
-                    ) {
-                        items(playHistoryList, key = { "history_${it.id}" }) { song ->
-                            val isCurrent = playerState.currentSong?.id == song.id
-                            val isBuffering = isCurrent && playerState.isBuffering
-                            val hasError = isCurrent && playerState.playerError != null
-                            val isFavorited = favoritesList.any { it.id == song.id }
-                            val isDownloaded = downloadsList.any { it.id == song.id } || (song.localAudioPath != null && java.io.File(song.localAudioPath).exists())
-                            val isDownloading = downloadStatusMap[song.id] is DownloadState.Downloading
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                            contentPadding = PaddingValues(bottom = 120.dp)
+                        ) {
+                            items(playHistoryList, key = { "history_${it.id}" }) { song ->
+                                val isCurrent = playerState.currentSong?.id == song.id
+                                val isBuffering = isCurrent && playerState.isBuffering
+                                val hasError = isCurrent && playerState.playerError != null
+                                val isFavorited = favoritesList.any { it.id == song.id }
+                                val isDownloaded = downloadsList.any { it.id == song.id } || (song.localAudioPath != null && java.io.File(song.localAudioPath).exists())
+                                val isDownloading = downloadStatusMap[song.id] is DownloadState.Downloading
 
-                            SongListItem(
-                                song = song,
-                                isPlaying = isCurrent,
-                                isFavorited = isFavorited,
-                                isBuffering = isBuffering,
-                                hasError = hasError,
-                                isDownloaded = isDownloaded,
-                                isDownloading = isDownloading,
-                                onClick = { onSongClick(song, playHistoryList) },
-                                onDownload = { onDownload(song) },
-                                onDeleteDownload = { onDeleteDownload(song) },
-                                onPlayNext = { onPlayNext(song) },
-                                onAddToPlaylist = { onAddToPlaylist(song) },
-                                onRemove = { onRemoveHistoryItem(song.id) }
-                            )
+                                SongListItem(
+                                    song = song,
+                                    isPlaying = isCurrent,
+                                    isFavorited = isFavorited,
+                                    isBuffering = isBuffering,
+                                    hasError = hasError,
+                                    isDownloaded = isDownloaded,
+                                    isDownloading = isDownloading,
+                                    onClick = { onSongClick(song, playHistoryList) },
+                                    onDownload = { onDownload(song) },
+                                    onDeleteDownload = { onDeleteDownload(song) },
+                                    onPlayNext = { onPlayNext(song) },
+                                    onAddToPlaylist = { onAddToPlaylist(song) },
+                                    onRemove = { onRemoveHistoryItem(song.id) }
+                                )
+                            }
                         }
                     }
                 } else {
                     Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f),
+                        modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
                     ) {
                         Column(
@@ -567,22 +634,6 @@ fun FavoritesScreen(
                         }
                     }
                 }
-            }
-        }
-
-        // Discreet diagnosis log entry at bottom
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 72.dp, top = 4.dp),
-            horizontalArrangement = Arrangement.Center
-        ) {
-            TextButton(onClick = onOpenDebug) {
-                Text(
-                    text = "v1.2.0 · 诊断日志",
-                    fontSize = 11.sp,
-                    color = SlateMuted.copy(alpha = 0.6f)
-                )
             }
         }
     }

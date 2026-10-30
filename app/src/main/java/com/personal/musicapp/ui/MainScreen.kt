@@ -1,5 +1,6 @@
 package com.personal.musicapp.ui
 
+import android.widget.Toast
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -26,6 +27,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import com.personal.musicapp.MusicApplication
 import com.personal.musicapp.data.local.DownloadState
 import com.personal.musicapp.data.model.Song
@@ -43,6 +45,7 @@ import kotlinx.coroutines.launch
 fun MainScreen(
     initialSharedText: String? = null
 ) {
+    val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val app = MusicApplication.instance
     val playerManager = app.playerManager
@@ -184,13 +187,17 @@ fun MainScreen(
     }
 
     fun handleDownload(song: Song) {
+        val appContext = context.applicationContext
         coroutineScope.launch {
+            Toast.makeText(appContext, "开始下载《${song.title}》...", Toast.LENGTH_SHORT).show()
             snackbarHostState.showSnackbar("开始下载《${song.title}》...")
             localRepo.downloadSong(song) { success, errorMsg ->
                 coroutineScope.launch {
                     if (success) {
+                        Toast.makeText(appContext, "已下载完成: 《${song.title}》", Toast.LENGTH_SHORT).show()
                         snackbarHostState.showSnackbar("已下载完成: 《${song.title}》")
                     } else {
+                        Toast.makeText(appContext, "下载失败: ${errorMsg ?: "网络异常"}", Toast.LENGTH_LONG).show()
                         snackbarHostState.showSnackbar("下载失败: ${errorMsg ?: "网络异常"}")
                     }
                 }
@@ -199,8 +206,10 @@ fun MainScreen(
     }
 
     fun handleDeleteDownload(song: Song) {
+        val appContext = context.applicationContext
         coroutineScope.launch {
             localRepo.deleteDownload(song.id)
+            Toast.makeText(appContext, "已删除《${song.title}》的本地离线文件", Toast.LENGTH_SHORT).show()
             snackbarHostState.showSnackbar("已删除《${song.title}》的本地离线文件")
         }
     }
@@ -398,6 +407,17 @@ fun MainScreen(
                         onShuffleAllDownloads = {
                             if (downloadsList.isNotEmpty()) {
                                 val shuffled = downloadsList.shuffled()
+                                playerManager.playSong(shuffled.first(), shuffled)
+                            }
+                        },
+                        onPlayAllHistory = {
+                            if (playHistoryList.isNotEmpty()) {
+                                playerManager.playSong(playHistoryList.first(), playHistoryList)
+                            }
+                        },
+                        onShuffleAllHistory = {
+                            if (playHistoryList.isNotEmpty()) {
+                                val shuffled = playHistoryList.shuffled()
                                 playerManager.playSong(shuffled.first(), shuffled)
                             }
                         },
