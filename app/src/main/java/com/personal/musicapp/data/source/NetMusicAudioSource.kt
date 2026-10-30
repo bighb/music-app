@@ -11,7 +11,7 @@ import java.util.concurrent.TimeUnit
 
 class NetMusicAudioSource : AudioSource {
 
-    override val sourceName: String = "全网音乐"
+    override val sourceName: String = "网易云"
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(12, TimeUnit.SECONDS)

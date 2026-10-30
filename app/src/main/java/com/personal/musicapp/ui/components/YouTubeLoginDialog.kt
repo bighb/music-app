@@ -6,6 +6,7 @@ import android.webkit.CookieManager
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
+import com.personal.musicapp.util.AppToast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -199,7 +200,7 @@ fun YouTubeLoginDialog(
                                     onClick = {
                                         CookieManager.getInstance().removeAllCookies(null)
                                         onClearCookie()
-                                        Toast.makeText(context, "已退出登录", Toast.LENGTH_SHORT).show()
+                                        AppToast.show(context, "已退出登录")
                                     }
                                 ) {
                                     Text("退出登录")
@@ -252,7 +253,7 @@ fun YouTubeLoginDialog(
                                     onClick = {
                                         if (manualCookieText.isNotBlank()) {
                                             onSaveCookie(manualCookieText.trim())
-                                            Toast.makeText(context, "YouTube 凭证保存成功", Toast.LENGTH_SHORT).show()
+                                            AppToast.show(context, "YouTube 凭证保存成功")
                                             onDismiss()
                                         }
                                     },
@@ -302,7 +303,7 @@ fun YouTubeLoginDialog(
                                             if (combinedCookie.contains("SAPISID") || combinedCookie.contains("SSID") || combinedCookie.contains("LOGIN_INFO")) {
                                                 val validCookie = if (musicCookie.isNotBlank()) musicCookie else combinedCookie
                                                 onSaveCookie(validCookie)
-                                                Toast.makeText(context, "YouTube 会员授权成功！", Toast.LENGTH_SHORT).show()
+                                                AppToast.show(context, "YouTube 会员授权成功！")
                                                 onDismiss()
                                             }
                                         }

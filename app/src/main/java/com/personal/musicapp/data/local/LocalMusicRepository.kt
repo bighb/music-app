@@ -217,7 +217,7 @@ class LocalMusicRepository(private val context: Context) {
 
     fun downloadSong(song: Song, onFinished: ((Boolean, String?) -> Unit)? = null) {
         if (isDownloaded(song.id) || _downloadStates.value[song.id] is DownloadState.Downloading) {
-            onFinished?.invoke(true, null)
+            AppLogger.d(tag, "Song 《${song.title}》 is already downloaded or downloading, skipping duplicate request")
             return
         }
 

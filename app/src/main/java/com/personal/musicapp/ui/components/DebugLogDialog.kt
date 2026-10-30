@@ -1,6 +1,7 @@
 package com.personal.musicapp.ui.components
 
 import android.widget.Toast
+import com.personal.musicapp.util.AppToast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -178,9 +179,9 @@ fun DebugLogDialog(
                         onClick = {
                             val ok = AppLogger.copyToClipboard(context)
                             if (ok) {
-                                Toast.makeText(context, "已成功复制诊断日志，直接发送给 AI 即可！", Toast.LENGTH_SHORT).show()
+                                AppToast.show(context, "已成功复制诊断日志，直接发送给 AI 即可！")
                             } else {
-                                Toast.makeText(context, "复制失败，请重试", Toast.LENGTH_SHORT).show()
+                                AppToast.show(context, "复制失败，请重试")
                             }
                         },
                         modifier = Modifier.weight(1f),
@@ -194,7 +195,7 @@ fun DebugLogDialog(
                     OutlinedButton(
                         onClick = {
                             AppLogger.clearLogs()
-                            Toast.makeText(context, "日志已清空", Toast.LENGTH_SHORT).show()
+                            AppToast.show(context, "日志已清空")
                         },
                         shape = RoundedCornerShape(12.dp)
                     ) {

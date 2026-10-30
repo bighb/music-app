@@ -1,7 +1,7 @@
 package com.personal.musicapp.ui.components
 
 import android.os.SystemClock
-import android.widget.Toast
+import com.personal.musicapp.util.AppToast
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -159,17 +159,14 @@ fun FullPlayerDialog(
                         var lastDownloadClickTime by remember { mutableLongStateOf(0L) }
 
                         IconButton(
+                            enabled = !isDownloading,
                             onClick = {
                                 val now = SystemClock.elapsedRealtime()
                                 if (now - lastDownloadClickTime < 1000L) return@IconButton
                                 lastDownloadClickTime = now
 
-                                if (isDownloading) {
-                                    Toast.makeText(context, "正在下载《${song.title}》，请稍候...", Toast.LENGTH_SHORT).show()
-                                    return@IconButton
-                                }
                                 if (isDownloaded || song.localAudioPath != null) {
-                                    Toast.makeText(context, "《${song.title}》已离线保存", Toast.LENGTH_SHORT).show()
+                                    AppToast.show(context, "《${song.title}》已离线保存")
                                     return@IconButton
                                 }
                                 onDownload()

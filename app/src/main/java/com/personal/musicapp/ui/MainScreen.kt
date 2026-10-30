@@ -1,6 +1,7 @@
 package com.personal.musicapp.ui
 
 import android.widget.Toast
+import com.personal.musicapp.util.AppToast
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -188,16 +189,25 @@ fun MainScreen(
 
     fun handleDownload(song: Song) {
         val appContext = context.applicationContext
+        if (localRepo.isDownloaded(song.id) || (song.localAudioPath != null && java.io.File(song.localAudioPath).exists())) {
+            AppToast.show(appContext, "《${song.title}》已离线保存")
+            return
+        }
+        if (localRepo.getDownloadState(song.id) is DownloadState.Downloading) {
+            AppToast.show(appContext, "正在下载《${song.title}》，请稍候...")
+            return
+        }
+
         coroutineScope.launch {
-            Toast.makeText(appContext, "开始下载《${song.title}》...", Toast.LENGTH_SHORT).show()
+            AppToast.show(appContext, "开始下载《${song.title}》...")
             snackbarHostState.showSnackbar("开始下载《${song.title}》...")
             localRepo.downloadSong(song) { success, errorMsg ->
                 coroutineScope.launch {
                     if (success) {
-                        Toast.makeText(appContext, "已下载完成: 《${song.title}》", Toast.LENGTH_SHORT).show()
+                        AppToast.show(appContext, "已下载完成: 《${song.title}》")
                         snackbarHostState.showSnackbar("已下载完成: 《${song.title}》")
                     } else {
-                        Toast.makeText(appContext, "下载失败: ${errorMsg ?: "网络异常"}", Toast.LENGTH_LONG).show()
+                        AppToast.show(appContext, "下载失败: ${errorMsg ?: "网络异常"}", Toast.LENGTH_LONG)
                         snackbarHostState.showSnackbar("下载失败: ${errorMsg ?: "网络异常"}")
                     }
                 }
@@ -209,7 +219,7 @@ fun MainScreen(
         val appContext = context.applicationContext
         coroutineScope.launch {
             localRepo.deleteDownload(song.id)
-            Toast.makeText(appContext, "已删除《${song.title}》的本地离线文件", Toast.LENGTH_SHORT).show()
+            AppToast.show(appContext, "已删除《${song.title}》的本地离线文件")
             snackbarHostState.showSnackbar("已删除《${song.title}》的本地离线文件")
         }
     }
