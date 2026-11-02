@@ -73,6 +73,37 @@ class PlaylistAndHistoryTest {
     }
 
     @Test
+    fun testSearchHistoryFiltersShareLinks() {
+        val history = mutableListOf<String>()
+
+        fun isShareLink(query: String): Boolean {
+            val lower = query.lowercase()
+            return lower.contains("http://") || lower.contains("https://") ||
+                    lower.contains("douyin.com") || lower.contains("iesdouyin.com") ||
+                    lower.contains("youtu.be") || lower.contains("youtube.com") ||
+                    lower.contains("b23.tv") || lower.contains("bilibili.com")
+        }
+
+        fun addQuery(q: String) {
+            val trimmed = q.trim()
+            if (trimmed.isEmpty() || isShareLink(trimmed)) return
+            history.removeAll { it.equals(trimmed, ignoreCase = true) }
+            history.add(0, trimmed)
+            if (history.size > 15) history.removeAt(history.lastIndex)
+        }
+
+        addQuery("周杰伦")
+        addQuery("https://v.douyin.com/iabc123/")
+        addQuery("7.91 复制打开抖音，看看【小明的作品】 https://v.douyin.com/xyz/")
+        addQuery("晴天")
+        addQuery("v.douyin.com/test")
+
+        assertEquals(2, history.size)
+        assertEquals("晴天", history[0])
+        assertEquals("周杰伦", history[1])
+    }
+
+    @Test
     fun testPlayHistoryOrderAndLimit() {
         val history = mutableListOf<Song>()
 

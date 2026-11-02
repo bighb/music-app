@@ -105,12 +105,12 @@ fun MainScreen(
         val query = queryToSearch.trim()
         if (query.isEmpty()) return
 
-        localRepo.addSearchQuery(query)
-
         if (sourceManager.findSourceForLink(query) != null || query.contains("http://") || query.contains("https://")) {
             parseAndPlay(query)
             return
         }
+
+        localRepo.addSearchQuery(query)
 
         isLoading = true
         hasSearched = true

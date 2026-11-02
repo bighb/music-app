@@ -29,6 +29,8 @@ class DouyinAudioSource(
     private val desktopUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
 
     private val urlPattern = Pattern.compile("https?://[a-zA-Z0-9./_?&=%-]+")
+    private val idTypePattern = Pattern.compile("/(?:share/)?(video|note|slides|music)/(\\d+)")
+    private val modalPattern = Pattern.compile("modal_id=(\\d+)")
 
     @Volatile
     private var cachedTtwid: String? = null
@@ -70,44 +72,53 @@ class DouyinAudioSource(
         val rawUrl = matcher.group()
 
         try {
-            // Extract possible title from text
-            val extractedTitle = extractTitleFromShareText(text)
+            var extractedTitle = extractTitleFromShareText(text)
 
-            // Step 1: Follow redirect to get actual video ID
+            // Step 1: Follow redirect to get actual content ID and type
             val redirectRequest = Request.Builder()
                 .url(rawUrl)
                 .header("User-Agent", mobileUserAgent)
                 .build()
 
             val redirectResp = client.newCall(redirectRequest).execute()
-            val finalUrl = redirectResp.request.url.toString()
+            val finalUrl = redirectResp.header("Location") ?: redirectResp.request.url.toString()
             redirectResp.close()
 
-            val idPattern = Pattern.compile("(?:video|note)/(\\d+)")
-            val idMatcher = idPattern.matcher(finalUrl)
-            val awemeId = if (idMatcher.find()) {
-                idMatcher.group(1)
+            val idTypeMatcher = idTypePattern.matcher(finalUrl)
+            var contentType = "video"
+            var contentId: String? = null
+
+            if (idTypeMatcher.find()) {
+                val matchedType = idTypeMatcher.group(1) ?: "video"
+                contentType = if (matchedType == "slides") "note" else matchedType
+                contentId = idTypeMatcher.group(2)
             } else {
-                val modalPattern = Pattern.compile("modal_id=(\\d+)")
                 val modalMatcher = modalPattern.matcher(finalUrl)
-                if (modalMatcher.find()) modalMatcher.group(1) else null
+                if (modalMatcher.find()) {
+                    contentId = modalMatcher.group(1)
+                    contentType = "video"
+                }
             }
 
             // Step 2: Try Strategy A - Direct Page _ROUTER_DATA
-            if (!awemeId.isNullOrEmpty()) {
-                val parsed = parseViaRouterData(awemeId)
+            if (!contentId.isNullOrEmpty()) {
+                val (parsed, htmlTitle) = parseViaRouterData(contentType, contentId)
                 if (parsed != null) return@withContext parsed
+                if (extractedTitle.isNullOrEmpty() && !htmlTitle.isNullOrEmpty()) {
+                    extractedTitle = htmlTitle
+                }
+
+                if (contentType == "note") {
+                    val (altParsed, _) = parseViaRouterData("video", contentId)
+                    if (altParsed != null) return@withContext altParsed
+                }
 
                 // Step 3: Try Strategy B - Web Detail API
-                val parsedDetail = parseViaWebDetail(awemeId)
+                val parsedDetail = parseViaWebDetail(contentId)
                 if (parsedDetail != null) return@withContext parsedDetail
             }
 
-            // Step 4: Try Strategy C - Free Multi-gateway fallback
-            val fallback = parseViaPublicGateway(rawUrl)
-            if (fallback != null) return@withContext fallback
-
-            // Step 5: If title was extracted, search full music library
+            // Step 4: If title was extracted, search full music library
             if (!extractedTitle.isNullOrEmpty() && fallbackMusicSource != null) {
                 val searchList = fallbackMusicSource.search(extractedTitle)
                 if (searchList.isNotEmpty()) {
@@ -124,24 +135,57 @@ class DouyinAudioSource(
         return@withContext null
     }
 
-    private fun extractTitleFromShareText(text: String): String? {
+    internal fun extractTitleFromShareText(text: String): String? {
+        val songMarkPattern = Pattern.compile("《(.*?)》")
+        val songMatcher = songMarkPattern.matcher(text)
+        if (songMatcher.find()) {
+            val title = songMatcher.group(1)?.trim()
+            if (!title.isNullOrEmpty()) return title
+        }
+
         val bracketPattern = Pattern.compile("【(.*?)】")
         val m = bracketPattern.matcher(text)
         if (m.find()) {
             val rawGroup = m.group(1)
             if (rawGroup != null) {
-                val title = rawGroup.replace("的作品", "").replace("的视频", "").trim()
+                val title = rawGroup
+                    .replace("发布的图文作品", "")
+                    .replace("发布的视频", "")
+                    .replace("的图文作品", "")
+                    .replace("创作的原声", "")
+                    .replace("的原声", "")
+                    .replace("的作品", "")
+                    .replace("的视频", "")
+                    .replace("的主页", "")
+                    .trim()
                 if (title.isNotEmpty()) return title
             }
         }
-        val cleaned = text.replace(urlPattern.toRegex(), "").replace("[0-9]+\\.[0-9]+".toRegex(), "").replace("复制此链接.*".toRegex(), "").trim()
-        return if (cleaned.length > 2) cleaned.take(20) else null
+        val cleaned = text
+            .replace(urlPattern.toRegex(), "")
+            .replace("[0-9]+[./][0-9]+".toRegex(), "")
+            .replace("复制此链接.*".toRegex(), "")
+            .replace("复制打开抖音.*".toRegex(), "")
+            .trim()
+        return if (cleaned.length > 2) cleaned.take(30) else null
     }
 
-    private fun parseViaRouterData(awemeId: String): Song? {
+    private fun extractHtmlTitle(html: String): String? {
+        val titlePattern = Pattern.compile("<title>(.*?)</title>", Pattern.CASE_INSENSITIVE)
+        val m = titlePattern.matcher(html)
+        if (m.find()) {
+            val raw = m.group(1)?.replace("- 抖音", "")?.replace("-抖音", "")?.trim()
+            if (!raw.isNullOrEmpty()) {
+                return extractTitleFromShareText(raw) ?: raw.take(30)
+            }
+        }
+        return null
+    }
+
+    private fun parseViaRouterData(contentType: String, id: String): Pair<Song?, String?> {
         return try {
             val ttwid = getOrRegisterTtwid()
-            val shareUrl = "https://www.iesdouyin.com/share/video/$awemeId"
+            val shareUrl = "https://www.iesdouyin.com/share/$contentType/$id"
             val req = Request.Builder()
                 .url(shareUrl)
                 .header("User-Agent", mobileUserAgent)
@@ -150,15 +194,16 @@ class DouyinAudioSource(
                 .build()
 
             client.newCall(req).execute().use { resp ->
-                if (!resp.isSuccessful) return null
-                val html = resp.body?.string() ?: return null
+                if (!resp.isSuccessful) return Pair(null, null)
+                val html = resp.body?.string() ?: return Pair(null, null)
 
+                val htmlTitle = extractHtmlTitle(html)
                 val routerIdx = html.indexOf("_ROUTER_DATA")
-                if (routerIdx == -1) return null
+                if (routerIdx == -1) return Pair(null, htmlTitle)
 
                 val startIdx = html.indexOf('{', routerIdx)
                 val endIdx = html.indexOf("</script>", startIdx)
-                if (startIdx == -1 || endIdx == -1) return null
+                if (startIdx == -1 || endIdx == -1) return Pair(null, htmlTitle)
 
                 var jsonStr = html.substring(startIdx, endIdx).trim()
                 if (jsonStr.endsWith(";")) {
@@ -166,28 +211,37 @@ class DouyinAudioSource(
                 }
 
                 val root = JsonParser.parseString(jsonStr).asJsonObject
-                val loaderData = root.getAsJsonObject("loaderData") ?: return null
+                val loaderData = root.getAsJsonObject("loaderData") ?: return Pair(null, htmlTitle)
 
-                var targetItem: JsonObject? = null
                 for (entry in loaderData.entrySet()) {
-                    // CRITICAL FIX: check isJsonObject to avoid null pointer / IllegalStateException
                     if (!entry.value.isJsonObject) continue
                     val pageObj = entry.value.asJsonObject
-                    val videoInfoRes = pageObj.getAsJsonObject("videoInfoRes") ?: continue
-                    val itemList = videoInfoRes.getAsJsonArray("item_list")
-                    if (itemList != null && itemList.size() > 0 && itemList[0].isJsonObject) {
-                        targetItem = itemList[0].asJsonObject
-                        break
+
+                    val musicInfoRes = pageObj.getAsJsonObject("musicInfoRes")
+                    if (musicInfoRes != null) {
+                        val musicInfo = musicInfoRes.getAsJsonObject("music_info")
+                        if (musicInfo != null) {
+                            val song = extractSongFromMusicJson(id, musicInfo)
+                            if (song != null) return Pair(song, htmlTitle)
+                        }
+                    }
+
+                    val videoInfoRes = pageObj.getAsJsonObject("videoInfoRes")
+                        ?: pageObj.getAsJsonObject("noteInfoRes")
+                    if (videoInfoRes != null) {
+                        val itemList = videoInfoRes.getAsJsonArray("item_list")
+                        if (itemList != null && itemList.size() > 0 && itemList[0].isJsonObject) {
+                            val song = extractSongFromAwemeJson(id, itemList[0].asJsonObject)
+                            if (song != null) return Pair(song, htmlTitle)
+                        }
                     }
                 }
 
-                if (targetItem == null) return null
-
-                extractSongFromAwemeJson(awemeId, targetItem)
+                Pair(null, htmlTitle)
             }
         } catch (e: Exception) {
             e.printStackTrace()
-            null
+            Pair(null, null)
         }
     }
 
@@ -284,49 +338,42 @@ class DouyinAudioSource(
         )
     }
 
-    private fun parseViaPublicGateway(rawUrl: String): Song? {
-        val gateways = listOf(
-            "https://api.pearktrue.cn/api/douyin/?url=",
-            "https://tenapi.cn/v2/video?url="
-        )
+    private fun extractSongFromMusicJson(musicId: String, musicObj: JsonObject): Song? {
+        val title = musicObj.get("title")?.asString ?: "抖音原声"
+        val author = musicObj.get("author")?.asString ?: "抖音创作者"
+        var audioUrl: String? = null
+        var coverUrl = ""
+        val durationMs = (musicObj.get("duration")?.asLong ?: 0L) * 1000L
 
-        for (gateway in gateways) {
-            try {
-                val req = Request.Builder()
-                    .url(gateway + rawUrl)
-                    .header("User-Agent", desktopUserAgent)
-                    .build()
-
-                client.newCall(req).execute().use { resp ->
-                    if (!resp.isSuccessful) return@use
-                    val body = resp.body?.string() ?: return@use
-                    val root = JsonParser.parseString(body).asJsonObject
-
-                    val data = root.getAsJsonObject("data") ?: root
-                    val title = data.get("title")?.asString ?: data.get("desc")?.asString ?: "抖音分享音频"
-                    val author = data.get("author")?.asString ?: "抖音创作者"
-                    val cover = data.get("cover")?.asString ?: ""
-                    val musicUrl = data.get("music")?.asString
-                    val videoUrl = data.get("url")?.asString ?: data.get("video")?.asString
-
-                    val playUrl = if (!musicUrl.isNullOrEmpty()) musicUrl else videoUrl
-                    if (!playUrl.isNullOrEmpty()) {
-                        return Song(
-                            id = "dy_gw_${System.currentTimeMillis()}",
-                            title = title,
-                            artist = author,
-                            coverUrl = cover,
-                            audioUrl = playUrl,
-                            durationMs = 0L,
-                            source = sourceName
-                        )
-                    }
-                }
-            } catch (e: Exception) {
-                // Ignore and try next gateway
+        val playUrlObj = musicObj.getAsJsonObject("play_url")
+        val urlList = playUrlObj?.getAsJsonArray("url_list")
+        if (urlList != null && urlList.size() > 0) {
+            audioUrl = urlList[0].asString
+        } else {
+            val uri = playUrlObj?.get("uri")?.asString
+            if (!uri.isNullOrEmpty()) {
+                audioUrl = "https://aweme.snssdk.com/aweme/v1/play/?video_id=$uri&ratio=1080p&line=0"
             }
         }
-        return null
+
+        val coverList = musicObj.getAsJsonObject("cover_large")?.getAsJsonArray("url_list")
+            ?: musicObj.getAsJsonObject("cover_hd")?.getAsJsonArray("url_list")
+            ?: musicObj.getAsJsonObject("cover_medium")?.getAsJsonArray("url_list")
+        if (coverList != null && coverList.size() > 0) {
+            coverUrl = coverList[0].asString
+        }
+
+        if (audioUrl.isNullOrEmpty()) return null
+
+        return Song(
+            id = "dy_music_$musicId",
+            title = title,
+            artist = author,
+            coverUrl = coverUrl,
+            audioUrl = audioUrl,
+            durationMs = durationMs,
+            source = sourceName
+        )
     }
 
     override suspend fun search(query: String): List<Song> = withContext(Dispatchers.IO) {

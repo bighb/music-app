@@ -486,11 +486,19 @@ class LocalMusicRepository(private val context: Context) {
 
     // ==================== Search History ====================
 
+    private fun isShareLink(query: String): Boolean {
+        val lower = query.lowercase()
+        return lower.contains("http://") || lower.contains("https://") ||
+                lower.contains("douyin.com") || lower.contains("iesdouyin.com") ||
+                lower.contains("youtu.be") || lower.contains("youtube.com") ||
+                lower.contains("b23.tv") || lower.contains("bilibili.com")
+    }
+
     private fun loadSearchHistory() {
         try {
             val historyStr = prefs.getString("search_history_v1", "") ?: ""
             if (historyStr.isNotEmpty()) {
-                val list = historyStr.split("|||").filter { it.isNotBlank() }
+                val list = historyStr.split("|||").filter { it.isNotBlank() && !isShareLink(it) }
                 _searchHistory.value = list
             }
         } catch (e: Exception) {
@@ -500,7 +508,7 @@ class LocalMusicRepository(private val context: Context) {
 
     fun addSearchQuery(query: String) {
         val trimmed = query.trim()
-        if (trimmed.isEmpty()) return
+        if (trimmed.isEmpty() || isShareLink(trimmed)) return
         val current = _searchHistory.value.toMutableList()
         current.removeAll { it.equals(trimmed, ignoreCase = true) }
         current.add(0, trimmed)
