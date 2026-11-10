@@ -58,7 +58,9 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.personal.musicapp.ui.theme.EmeraldSuccess
 import com.personal.musicapp.ui.theme.RosePrimary
+import com.personal.musicapp.ui.theme.YouTubeRed
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
@@ -107,13 +109,13 @@ fun YouTubeLoginDialog(
                             modifier = Modifier
                                 .size(32.dp)
                                 .clip(CircleShape)
-                                .background(Color(0xFFFF0000).copy(alpha = 0.15f)),
+                                .background(YouTubeRed.copy(alpha = 0.15f)),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 imageVector = Icons.Default.PlayArrow,
                                 contentDescription = null,
-                                tint = Color(0xFFFF0000),
+                                tint = YouTubeRed,
                                 modifier = Modifier.size(18.dp)
                             )
                         }
@@ -127,7 +129,7 @@ fun YouTubeLoginDialog(
                                 text = if (isLoggedIn) "已激活会员专属高码率" else "免广告 · 登录享 256kbps 会员音质",
                                 style = MaterialTheme.typography.bodySmall.copy(
                                     fontSize = 11.sp,
-                                    color = if (isLoggedIn) Color(0xFF2E7D32) else MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = if (isLoggedIn) EmeraldSuccess else MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             )
                         }
@@ -178,7 +180,7 @@ fun YouTubeLoginDialog(
                             Icon(
                                 imageVector = Icons.Default.CheckCircle,
                                 contentDescription = null,
-                                tint = Color(0xFF2E7D32),
+                                tint = EmeraldSuccess,
                                 modifier = Modifier.size(64.dp)
                             )
                             Spacer(modifier = Modifier.height(16.dp))

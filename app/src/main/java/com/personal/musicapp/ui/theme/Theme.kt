@@ -19,14 +19,17 @@ private val LightColorScheme = lightColorScheme(
     onPrimaryContainer = Color(0xFF9F1239),
     secondary = SlateDark,
     onSecondary = Color.White,
-    tertiary = RoseActive,
+    tertiary = EmeraldSuccess,
+    onTertiary = Color.White,
+    tertiaryContainer = EmeraldTint,
     background = BackgroundLight,
     onBackground = InkBlack,
     surface = SurfaceLight,
     onSurface = InkBlack,
     surfaceVariant = SurfaceVariantLight,
     onSurfaceVariant = SlateMuted,
-    outline = BorderLight
+    outline = BorderLight,
+    outlineVariant = Color(0xFFF3F4F6)
 )
 
 private val DarkColorScheme = darkColorScheme(

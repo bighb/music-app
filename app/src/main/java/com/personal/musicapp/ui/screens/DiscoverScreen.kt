@@ -1,11 +1,13 @@
 package com.personal.musicapp.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -24,6 +26,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -36,12 +39,18 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.outlined.Explore
+import androidx.compose.material.icons.outlined.SearchOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -54,11 +63,20 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.focus.onFocusChanged
+import com.personal.musicapp.data.model.SearchSuggestion
+import com.personal.musicapp.util.SearchInputUtils
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.border
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalFocusManager
@@ -73,11 +91,14 @@ import com.personal.musicapp.data.local.DownloadState
 import com.personal.musicapp.data.model.Song
 import com.personal.musicapp.player.PlayerState
 import com.personal.musicapp.ui.components.SongListItem
+import com.personal.musicapp.ui.theme.EmeraldSuccess
+import com.personal.musicapp.ui.theme.EmeraldTint
 import com.personal.musicapp.ui.theme.InkBlack
 import com.personal.musicapp.ui.theme.RosePrimary
 import com.personal.musicapp.ui.theme.RoseTint
 import com.personal.musicapp.ui.theme.SlateDark
 import com.personal.musicapp.ui.theme.SlateMuted
+import com.personal.musicapp.ui.theme.YouTubeRed
 
 @Suppress("UNUSED_PARAMETER")
 @OptIn(ExperimentalLayoutApi::class)
@@ -88,6 +109,8 @@ fun DiscoverScreen(
     onSearch: () -> Unit,
     searchResults: List<Song>,
     searchHistory: List<String>,
+    searchSuggestions: List<SearchSuggestion> = emptyList(),
+    onSelectSuggestion: (String) -> Unit = {},
     onSelectHistoryQuery: (String) -> Unit,
     onDeleteHistoryQuery: (String) -> Unit,
     onClearSearchHistory: () -> Unit,
@@ -105,6 +128,7 @@ fun DiscoverScreen(
     onOpenFullPlayer: () -> Unit = {},
     downloadStatusMap: Map<String, DownloadState> = emptyMap(),
     onSongClick: (Song) -> Unit,
+    onToggleFavorite: (Song) -> Unit = {},
     onDownload: (Song) -> Unit = {},
     onDeleteDownload: (Song) -> Unit = {},
     onPlayNext: (Song) -> Unit,
@@ -115,6 +139,23 @@ fun DiscoverScreen(
     modifier: Modifier = Modifier
 ) {
     val focusManager = LocalFocusManager.current
+    val searchResultsListState = rememberLazyListState()
+
+    var isSuggestionsVisible by remember { mutableStateOf(false) }
+
+    // Auto-dismiss recommendations when scrolling through results to prevent overlay obstruction
+    LaunchedEffect(searchResultsListState.isScrollInProgress) {
+        if (searchResultsListState.isScrollInProgress) {
+            isSuggestionsVisible = false
+            focusManager.clearFocus()
+        }
+    }
+
+    // Android back button hierarchy: dismiss suggestions first before navigating back
+    BackHandler(enabled = isSuggestionsVisible) {
+        isSuggestionsVisible = false
+        focusManager.clearFocus()
+    }
 
     val infiniteTransition = rememberInfiniteTransition(label = "resume_card_rotation")
     val resumeRotation by infiniteTransition.animateFloat(
@@ -153,7 +194,7 @@ fun DiscoverScreen(
             Surface(
                 onClick = onOpenYouTubeAuth,
                 shape = RoundedCornerShape(20.dp),
-                color = if (!youtubeCookie.isNullOrBlank()) Color(0xFF2E7D32).copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                color = if (!youtubeCookie.isNullOrBlank()) EmeraldTint else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
                 modifier = Modifier.height(30.dp)
             ) {
                 Row(
@@ -164,7 +205,7 @@ fun DiscoverScreen(
                         modifier = Modifier
                             .size(14.dp)
                             .clip(CircleShape)
-                            .background(if (!youtubeCookie.isNullOrBlank()) Color(0xFF2E7D32) else Color(0xFFFF0000)),
+                            .background(if (!youtubeCookie.isNullOrBlank()) EmeraldSuccess else YouTubeRed),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
@@ -179,7 +220,7 @@ fun DiscoverScreen(
                         text = if (!youtubeCookie.isNullOrBlank()) "YouTube 会员" else "YouTube 登录",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Medium,
-                        color = if (!youtubeCookie.isNullOrBlank()) Color(0xFF2E7D32) else MaterialTheme.colorScheme.onSurfaceVariant
+                        color = if (!youtubeCookie.isNullOrBlank()) EmeraldSuccess else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
@@ -192,7 +233,14 @@ fun DiscoverScreen(
         ) {
             OutlinedTextField(
                 value = searchQuery,
-                onValueChange = onSearchQueryChange,
+                onValueChange = { newText ->
+                    onSearchQueryChange(newText)
+                    if (newText.isNotBlank()) {
+                        isSuggestionsVisible = true
+                    } else {
+                        isSuggestionsVisible = false
+                    }
+                },
                 placeholder = {
                     Text("搜索歌名、歌手或粘贴链接...", fontSize = 13.sp)
                 },
@@ -203,15 +251,16 @@ fun DiscoverScreen(
                     if (searchQuery.isNotEmpty()) {
                         IconButton(onClick = {
                             onSearchQueryChange("")
-                            onClearSearchResult()
+                            isSuggestionsVisible = false
                         }) {
-                            Icon(imageVector = Icons.Default.Clear, contentDescription = "清空", tint = SlateMuted)
+                            Icon(imageVector = Icons.Default.Clear, contentDescription = "清空输入框", tint = SlateMuted)
                         }
                     }
                 },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = {
+                    isSuggestionsVisible = false
                     focusManager.clearFocus()
                     onSearch()
                 }),
@@ -225,12 +274,18 @@ fun DiscoverScreen(
                 modifier = Modifier
                     .weight(1f)
                     .height(54.dp)
+                    .onFocusChanged { focusState ->
+                        if (focusState.isFocused && searchQuery.isNotBlank()) {
+                            isSuggestionsVisible = true
+                        }
+                    }
             )
 
             Spacer(modifier = Modifier.width(8.dp))
 
             Button(
                 onClick = {
+                    isSuggestionsVisible = false
                     focusManager.clearFocus()
                     onSearch()
                 },
@@ -242,8 +297,178 @@ fun DiscoverScreen(
             }
         }
 
+        val isShareContent = SearchInputUtils.isShareContentOrUrl(searchQuery)
+
+        // 1. Detected Share Link / Audio URL Banner Card
+        if (isShareContent && searchQuery.isNotBlank() && isSuggestionsVisible) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        isSuggestionsVisible = false
+                        focusManager.clearFocus()
+                        onSearch()
+                    },
+                shape = RoundedCornerShape(16.dp),
+                color = RosePrimary.copy(alpha = 0.12f),
+                border = BorderStroke(1.dp, RosePrimary.copy(alpha = 0.45f))
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(38.dp)
+                            .background(RosePrimary.copy(alpha = 0.2f), CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Link,
+                            contentDescription = "链接解析",
+                            tint = RosePrimary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "识别到音源 / 视频分享链接",
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "点击立即一键解析并播放音频",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = SlateMuted
+                        )
+                    }
+                    FilledTonalButton(
+                        onClick = {
+                            isSuggestionsVisible = false
+                            focusManager.clearFocus()
+                            onSearch()
+                        },
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                        modifier = Modifier.height(34.dp)
+                    ) {
+                        Text("立即解析", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+            }
+        } else if (searchSuggestions.isNotEmpty() && searchQuery.isNotBlank() && isSuggestionsVisible) {
+            // 2. Search Suggestions Dropdown Card (with visual alignment & platform badge)
+            Spacer(modifier = Modifier.height(8.dp))
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.98f),
+                shadowElevation = 8.dp,
+                tonalElevation = 3.dp,
+                border = BorderStroke(0.8.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+            ) {
+                Column(modifier = Modifier.padding(vertical = 4.dp)) {
+                    searchSuggestions.forEachIndexed { index, item ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    isSuggestionsVisible = false
+                                    focusManager.clearFocus()
+                                    onSelectSuggestion(item.keyword)
+                                }
+                                .padding(horizontal = 16.dp, vertical = 9.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Fixed-width icon slot ensuring strict baseline alignment for text
+                            Box(
+                                modifier = Modifier.size(24.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = if (item.isHistory) Icons.Default.History else Icons.Default.Search,
+                                    contentDescription = null,
+                                    tint = if (item.isHistory) SlateMuted else RosePrimary.copy(alpha = 0.85f),
+                                    modifier = Modifier.size(17.dp)
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.width(12.dp))
+
+                            // Keyword text & subtitle in structured column
+                            Column(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .padding(vertical = 1.dp)
+                            ) {
+                                Text(
+                                    text = item.keyword,
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                if (!item.subtitle.isNullOrBlank()) {
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = item.subtitle,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = SlateMuted,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.width(10.dp))
+
+                            // Right-aligned platform badge with distinct brand tinting
+                            val (badgeBg, badgeText, badgeLabel) = when (item.source.uppercase()) {
+                                "QQ" -> Triple(Color(0xFF10B981).copy(alpha = 0.15f), Color(0xFF059669), "QQ")
+                                "酷我", "KUWO" -> Triple(Color(0xFFF59E0B).copy(alpha = 0.15f), Color(0xFFD97706), "酷我")
+                                "网易", "NETEASE" -> Triple(Color(0xFFEF4444).copy(alpha = 0.15f), Color(0xFFDC2626), "网易")
+                                "YOUTUBE" -> Triple(Color(0xFFEF4444).copy(alpha = 0.15f), Color(0xFFDC2626), "YT")
+                                "历史" -> Triple(MaterialTheme.colorScheme.surfaceVariant, SlateMuted, "历史")
+                                else -> Triple(RosePrimary.copy(alpha = 0.15f), RosePrimary, item.source)
+                            }
+
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(badgeBg)
+                                    .padding(horizontal = 7.dp, vertical = 2.5.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = badgeLabel,
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = badgeText
+                                    )
+                                )
+                            }
+                        }
+
+                        // Indented divider strictly aligned with the text starting edge
+                        if (index < searchSuggestions.size - 1) {
+                            HorizontalDivider(
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f),
+                                thickness = 0.5.dp,
+                                modifier = Modifier.padding(start = 52.dp, end = 16.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
         // Search History Tags directly beneath search bar
-        if (searchHistory.isNotEmpty()) {
+        if (searchHistory.isNotEmpty() && !hasSearched && searchQuery.isBlank()) {
             Spacer(modifier = Modifier.height(10.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -291,9 +516,10 @@ fun DiscoverScreen(
             ) {
                 searchHistory.forEach { item ->
                     Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = Color(0xFFF3F4F6),
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.75f),
                         modifier = Modifier.clickable {
+                            isSuggestionsVisible = false
                             onSearchQueryChange(item)
                             focusManager.clearFocus()
                             onSelectHistoryQuery(item)
@@ -314,7 +540,7 @@ fun DiscoverScreen(
 
         // Content Area: Loading, Error, Results, Empty State, or Default Dashboard
         when {
-            isLoading -> {
+            isLoading && searchResults.isEmpty() -> {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -332,7 +558,7 @@ fun DiscoverScreen(
                 }
             }
 
-            errorMessage != null -> {
+            errorMessage != null && searchResults.isEmpty() -> {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -358,8 +584,8 @@ fun DiscoverScreen(
                 }
             }
 
-            searchResults.isEmpty() && hasSearched -> {
-                // Empty search result state
+            searchResults.isEmpty() && hasSearched && !isLoading -> {
+                // Empty search result state with Soft Duotone Glow Disc
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -370,13 +596,38 @@ fun DiscoverScreen(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         modifier = Modifier.padding(24.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Search,
-                            contentDescription = null,
-                            modifier = Modifier.size(54.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                        )
-                        Spacer(modifier = Modifier.height(12.dp))
+                        Box(
+                            modifier = Modifier
+                                .size(92.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    Brush.radialGradient(
+                                        colors = listOf(
+                                            RosePrimary.copy(alpha = 0.14f),
+                                            RosePrimary.copy(alpha = 0.04f),
+                                            Color.Transparent
+                                        )
+                                    )
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(60.dp)
+                                    .clip(CircleShape)
+                                    .background(RosePrimary.copy(alpha = 0.08f))
+                                    .border(1.dp, RosePrimary.copy(alpha = 0.18f), CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.SearchOff,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(28.dp),
+                                    tint = RosePrimary
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(14.dp))
                         Text(
                             text = "未找到相关歌曲",
                             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
@@ -394,7 +645,8 @@ fun DiscoverScreen(
                             onClick = {
                                 onSearchQueryChange("")
                                 onClearSearchResult()
-                            }
+                            },
+                            shape = RoundedCornerShape(12.dp)
                         ) {
                             Text("清空重试")
                         }
@@ -522,13 +774,38 @@ fun DiscoverScreen(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             modifier = Modifier.padding(24.dp)
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Search,
-                                contentDescription = null,
-                                modifier = Modifier.size(54.dp),
-                                tint = SlateMuted.copy(alpha = 0.4f)
-                            )
-                            Spacer(modifier = Modifier.height(12.dp))
+                            Box(
+                                modifier = Modifier
+                                    .size(92.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        Brush.radialGradient(
+                                            colors = listOf(
+                                                RosePrimary.copy(alpha = 0.14f),
+                                                RosePrimary.copy(alpha = 0.04f),
+                                                Color.Transparent
+                                            )
+                                        )
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(60.dp)
+                                        .clip(CircleShape)
+                                        .background(RosePrimary.copy(alpha = 0.08f))
+                                        .border(1.dp, RosePrimary.copy(alpha = 0.18f), CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.Explore,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(30.dp),
+                                        tint = RosePrimary
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(14.dp))
                             Text(
                                 text = "全网多音源聚合搜索",
                                 style = MaterialTheme.typography.titleMedium.copy(
@@ -547,36 +824,85 @@ fun DiscoverScreen(
             }
 
             else -> {
-                LazyColumn(
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                    contentPadding = PaddingValues(bottom = 90.dp)
+                        .weight(1f)
                 ) {
-                    items(searchResults, key = { it.id }) { song ->
-                        val isCurrent = playerState.currentSong?.id == song.id
-                        val isBuffering = isCurrent && playerState.isBuffering
-                        val hasError = isCurrent && playerState.playerError != null
-                        val isFavorited = favoritesList.any { it.id == song.id }
-
-                        val isDownloaded = downloadStatusMap[song.id] is DownloadState.Downloaded || song.localAudioPath != null
-                        val isDownloading = downloadStatusMap[song.id] is DownloadState.Downloading
-
-                        SongListItem(
-                            song = song,
-                            isPlaying = isCurrent,
-                            isFavorited = isFavorited,
-                            isBuffering = isBuffering,
-                            hasError = hasError,
-                            isDownloaded = isDownloaded,
-                            isDownloading = isDownloading,
-                            onClick = { onSongClick(song) },
-                            onDownload = { onDownload(song) },
-                            onDeleteDownload = { onDeleteDownload(song) },
-                            onPlayNext = { onPlayNext(song) },
-                            onAddToPlaylist = { onAddToPlaylist(song) }
+                    if (isLoading) {
+                        LinearProgressIndicator(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(2.dp),
+                            color = MaterialTheme.colorScheme.primary
                         )
+                        Spacer(modifier = Modifier.height(4.dp))
+                    }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "搜索结果 (${searchResults.size})",
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontWeight = FontWeight.Bold,
+                                color = SlateDark
+                            )
+                        )
+                        TextButton(
+                            onClick = onClearSearchResult,
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp),
+                                tint = SlateMuted
+                            )
+                            Spacer(modifier = Modifier.width(2.dp))
+                            Text("清空列表", fontSize = 11.sp, color = SlateMuted)
+                        }
+                    }
+
+                    LazyColumn(
+                        state = searchResultsListState,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                        contentPadding = PaddingValues(bottom = 90.dp)
+                    ) {
+                        items(searchResults, key = { it.id }) { song ->
+                            val isCurrent = playerState.currentSong?.id == song.id
+                            val isActivelyPlaying = isCurrent && playerState.isPlaying
+                            val isBuffering = isCurrent && playerState.isBuffering
+                            val hasError = isCurrent && playerState.playerError != null
+                            val isFavorited = favoritesList.any { it.id == song.id }
+
+                            val isDownloaded = downloadStatusMap[song.id] is DownloadState.Downloaded || song.localAudioPath != null
+                            val isDownloading = downloadStatusMap[song.id] is DownloadState.Downloading
+
+                            SongListItem(
+                                song = song,
+                                isPlaying = isCurrent,
+                                isActivelyPlaying = isActivelyPlaying,
+                                isFavorited = isFavorited,
+                                isBuffering = isBuffering,
+                                hasError = hasError,
+                                isDownloaded = isDownloaded,
+                                isDownloading = isDownloading,
+                                onClick = { onSongClick(song) },
+                                onToggleFavorite = { onToggleFavorite(song) },
+                                onDownload = { onDownload(song) },
+                                onDeleteDownload = { onDeleteDownload(song) },
+                                onPlayNext = { onPlayNext(song) },
+                                onAddToPlaylist = { onAddToPlaylist(song) }
+                            )
+                        }
                     }
                 }
             }

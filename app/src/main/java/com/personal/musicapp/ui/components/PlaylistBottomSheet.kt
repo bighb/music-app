@@ -65,6 +65,7 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.personal.musicapp.data.model.Song
 import com.personal.musicapp.player.PlayerState
+import com.personal.musicapp.ui.theme.BorderLight
 import com.personal.musicapp.ui.theme.InkBlack
 import com.personal.musicapp.ui.theme.RosePrimary
 import com.personal.musicapp.ui.theme.RoseTint
@@ -231,15 +232,15 @@ fun PlaylistBottomSheet(
                                     Box(
                                         modifier = Modifier
                                             .size(40.dp)
-                                            .clip(RoundedCornerShape(6.dp))
-                                            .background(Color.Black),
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(RosePrimary.copy(alpha = 0.14f)),
                                         contentAlignment = Alignment.Center
                                     ) {
-                                        Icon(
-                                            imageVector = Icons.Default.GraphicEq,
-                                            contentDescription = "当前播放",
-                                            tint = RosePrimary,
-                                            modifier = Modifier.size(22.dp)
+                                        AnimatedEqualizerIcon(
+                                            isActivelyPlaying = playerState.isPlaying,
+                                            color = RosePrimary,
+                                            barWidth = 3.dp,
+                                            maxHeight = 16.dp
                                         )
                                     }
 
@@ -316,8 +317,8 @@ fun PlaylistBottomSheet(
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .clip(RoundedCornerShape(8.dp))
-                                            .background(Color(0xFFF9FAFB))
-                                            .border(BorderStroke(0.5.dp, Color(0xFFE5E7EB)), RoundedCornerShape(8.dp))
+                                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
+                                            .border(BorderStroke(0.5.dp, BorderLight), RoundedCornerShape(8.dp))
                                             .clickable { onSelectSong(song) }
                                             .padding(horizontal = 8.dp, vertical = 6.dp),
                                         verticalAlignment = Alignment.CenterVertically
@@ -327,7 +328,7 @@ fun PlaylistBottomSheet(
                                             modifier = Modifier
                                                 .size(24.dp)
                                                 .clip(RoundedCornerShape(4.dp))
-                                                .background(Color(0xFFF3F4F6)),
+                                                .background(MaterialTheme.colorScheme.surfaceVariant),
                                             contentAlignment = Alignment.Center
                                         ) {
                                             Text(
@@ -345,7 +346,7 @@ fun PlaylistBottomSheet(
                                             modifier = Modifier
                                                 .size(38.dp)
                                                 .clip(RoundedCornerShape(6.dp))
-                                                .background(Color(0xFFE5E7EB)),
+                                                .background(MaterialTheme.colorScheme.surfaceVariant),
                                             contentAlignment = Alignment.Center
                                         ) {
                                             if (song.displayCover.isNotEmpty()) {
@@ -494,10 +495,10 @@ fun PlaylistBottomSheet(
                                     .clip(RoundedCornerShape(8.dp))
                                     .background(
                                         if (isCurrent) RoseTint
-                                        else Color(0xFFF9FAFB)
+                                        else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
                                     )
                                     .border(
-                                        BorderStroke(0.5.dp, if (isCurrent) RosePrimary.copy(alpha = 0.35f) else Color(0xFFE5E7EB)),
+                                        BorderStroke(0.5.dp, if (isCurrent) RosePrimary.copy(alpha = 0.35f) else BorderLight),
                                         RoundedCornerShape(8.dp)
                                     )
                                     .clickable { onSelectSong(song) }
@@ -508,7 +509,7 @@ fun PlaylistBottomSheet(
                                     modifier = Modifier
                                         .size(40.dp)
                                         .clip(RoundedCornerShape(6.dp))
-                                        .background(Color(0xFFE5E7EB)),
+                                        .background(MaterialTheme.colorScheme.surfaceVariant),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     if (song.displayCover.isNotEmpty()) {

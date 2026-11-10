@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.outlined.Explore
+import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -31,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import com.personal.musicapp.MusicApplication
 import com.personal.musicapp.data.local.DownloadState
+import com.personal.musicapp.data.model.SearchSuggestion
 import com.personal.musicapp.data.model.Song
 import com.personal.musicapp.ui.components.DebugLogDialog
 import com.personal.musicapp.ui.components.FullPlayerDialog
@@ -40,6 +43,9 @@ import com.personal.musicapp.ui.components.YouTubeLoginDialog
 import com.personal.musicapp.ui.screens.DiscoverScreen
 import com.personal.musicapp.ui.screens.FavoritesScreen
 import com.personal.musicapp.util.AppLogger
+import com.personal.musicapp.util.SearchInputUtils
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @Composable
@@ -72,9 +78,29 @@ fun MainScreen(
     var showQueueSheet by remember { mutableStateOf(false) }
     var showDebugDialog by remember { mutableStateOf(false) }
     var showYouTubeLoginDialog by remember { mutableStateOf(false) }
+    var searchJob by remember { mutableStateOf<Job?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
 
+    var searchSuggestions by remember { mutableStateOf<List<SearchSuggestion>>(emptyList()) }
+
+    // Debounced query suggestions (mixing local history & online suggest)
+    LaunchedEffect(searchQuery, searchHistory) {
+        val q = searchQuery.trim()
+        if (q.isEmpty() || SearchInputUtils.isShareContentOrUrl(q)) {
+            searchSuggestions = emptyList()
+            return@LaunchedEffect
+        }
+        delay(260L)
+        try {
+            val res = sourceManager.getSuggestions(q, searchHistory)
+            searchSuggestions = res
+        } catch (_: Exception) {
+            searchSuggestions = emptyList()
+        }
+    }
+
     fun parseAndPlay(linkOrText: String) {
+        searchSuggestions = emptyList()
         isLoading = true
         hasSearched = true
         errorMessage = null
@@ -103,6 +129,7 @@ fun MainScreen(
 
     fun performSearch(queryToSearch: String = searchQuery) {
         val query = queryToSearch.trim()
+        searchSuggestions = emptyList()
         if (query.isEmpty()) return
 
         if (sourceManager.findSourceForLink(query) != null || query.contains("http://") || query.contains("https://")) {
@@ -112,65 +139,71 @@ fun MainScreen(
 
         localRepo.addSearchQuery(query)
 
-        isLoading = true
         hasSearched = true
         errorMessage = null
-        AppLogger.i("MainScreen", "Searching 3-tier weighted: $query")
-        coroutineScope.launch {
+        AppLogger.i("MainScreen", "Searching 3-tier weighted (streaming): $query")
+
+        searchJob?.cancel()
+        searchJob = coroutineScope.launch {
+            // Priority 1: Local offline downloads matching query (< 5ms)
+            val localDownloadsMatches = localRepo.downloads.value.filter {
+                it.title.contains(query, ignoreCase = true) || it.artist.contains(query, ignoreCase = true)
+            }
+
+            // Priority 2: Play history matching query (< 5ms)
+            val existingIds = localDownloadsMatches.map { it.id }.toSet()
+            val playHistoryMatches = localRepo.playHistory.value.filter {
+                (it.title.contains(query, ignoreCase = true) || it.artist.contains(query, ignoreCase = true)) &&
+                        it.id !in existingIds
+            }
+
+            val localMatches = localDownloadsMatches + playHistoryMatches
+            if (localMatches.isNotEmpty()) {
+                searchResults = localMatches
+                isLoading = false // Show local matches immediately without blocking spinner
+            } else {
+                isLoading = true
+            }
+
             try {
-                // Priority 1: Local offline downloads matching query
-                val localDownloadsMatches = localRepo.downloads.value.filter {
-                    it.title.contains(query, ignoreCase = true) || it.artist.contains(query, ignoreCase = true)
+                // Priority 3: Online multi-source search via flow stream
+                sourceManager.searchStream(query).collect { onlineResults ->
+                    val allKnownIds = (localDownloadsMatches.map { it.id } + playHistoryMatches.map { it.id }).toMutableSet()
+                    val uniqueOnline = onlineResults.filter { onlineSong ->
+                        val isDuplicate = allKnownIds.contains(onlineSong.id) ||
+                                localDownloadsMatches.any { it.title.equals(onlineSong.title, ignoreCase = true) && it.artist.equals(onlineSong.artist, ignoreCase = true) }
+                        if (!isDuplicate) {
+                            allKnownIds.add(onlineSong.id)
+                            true
+                        } else false
+                    }
+
+                    val finalResults = localMatches + uniqueOnline
+                    searchResults = finalResults
+                    isLoading = false
+                    AppLogger.d("MainScreen", "Stream update for \"$query\": total=${finalResults.size} (local=${localMatches.size}, online=${uniqueOnline.size})")
                 }
 
-                // Priority 2: Play history matching query (excluding already matched downloads)
-                val existingIds = localDownloadsMatches.map { it.id }.toSet()
-                val playHistoryMatches = localRepo.playHistory.value.filter {
-                    (it.title.contains(query, ignoreCase = true) || it.artist.contains(query, ignoreCase = true)) &&
-                            it.id !in existingIds
-                }
-
-                // Priority 3: Online multi-source search (Douyin, Kuwo, NetMusic)
-                val onlineResults = try {
-                    sourceManager.search(query)
-                } catch (e: Exception) {
-                    AppLogger.w("MainScreen", "Online search network issue, using local matches", e)
-                    emptyList()
-                }
-
-                // Deduplicate online results against local matches
-                val allKnownIds = (localDownloadsMatches.map { it.id } + playHistoryMatches.map { it.id }).toMutableSet()
-                val uniqueOnline = onlineResults.filter { onlineSong ->
-                    val isDuplicate = allKnownIds.contains(onlineSong.id) ||
-                            localDownloadsMatches.any { it.title.equals(onlineSong.title, ignoreCase = true) && it.artist.equals(onlineSong.artist, ignoreCase = true) }
-                    if (!isDuplicate) {
-                        allKnownIds.add(onlineSong.id)
-                        true
-                    } else false
-                }
-
-                val finalResults = localDownloadsMatches + playHistoryMatches + uniqueOnline
-                isLoading = false
-
-                if (finalResults.isEmpty()) {
+                if (searchResults.isEmpty()) {
                     errorMessage = "未找到与 \"$query\" 相关的音频，请尝试其他关键词"
                     AppLogger.w("MainScreen", "No search results for: $query")
-                } else {
-                    searchResults = finalResults
-                    AppLogger.i("MainScreen", "Found ${finalResults.size} results (downloads=${localDownloadsMatches.size}, history=${playHistoryMatches.size}, online=${uniqueOnline.size}) for: $query")
                 }
             } catch (e: Exception) {
                 isLoading = false
-                val localFallback = localRepo.downloads.value.filter {
-                    it.title.contains(query, ignoreCase = true) || it.artist.contains(query, ignoreCase = true)
+                if (searchResults.isEmpty()) {
+                    val localFallback = localRepo.downloads.value.filter {
+                        it.title.contains(query, ignoreCase = true) || it.artist.contains(query, ignoreCase = true)
+                    }
+                    if (localFallback.isNotEmpty()) {
+                        searchResults = localFallback
+                        AppLogger.i("MainScreen", "Fallback to local downloads due to error: ${localFallback.size}")
+                    } else {
+                        errorMessage = "搜索失败: ${e.localizedMessage ?: "网络错误"}"
+                        AppLogger.e("MainScreen", "Search error for $query", e)
+                    }
                 }
-                if (localFallback.isNotEmpty()) {
-                    searchResults = localFallback
-                    AppLogger.i("MainScreen", "Fallback to local downloads due to error: ${localFallback.size}")
-                } else {
-                    errorMessage = "搜索失败: ${e.localizedMessage ?: "网络错误"}"
-                    AppLogger.e("MainScreen", "Search error for $query", e)
-                }
+            } finally {
+                isLoading = false
             }
         }
     }
@@ -257,6 +290,7 @@ fun MainScreen(
                         onBarClick = { showFullPlayer = true },
                         onTogglePlay = { playerManager.togglePlayPause() },
                         onSkipNext = { playerManager.skipNext() },
+                        onSkipPrevious = { playerManager.skipPrevious() },
                         onOpenQueue = { showQueueSheet = true }
                     )
                 }
@@ -265,13 +299,23 @@ fun MainScreen(
                     NavigationBarItem(
                         selected = selectedTab == 0,
                         onClick = { selectedTab = 0 },
-                        icon = { Icon(Icons.Default.Explore, contentDescription = "发现") },
+                        icon = {
+                            Icon(
+                                imageVector = if (selectedTab == 0) Icons.Filled.Explore else Icons.Outlined.Explore,
+                                contentDescription = "发现"
+                            )
+                        },
                         label = { Text("发现") }
                     )
                     NavigationBarItem(
                         selected = selectedTab == 1,
                         onClick = { selectedTab = 1 },
-                        icon = { Icon(Icons.Default.Favorite, contentDescription = "我的") },
+                        icon = {
+                            Icon(
+                                imageVector = if (selectedTab == 1) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                                contentDescription = "我的"
+                            )
+                        },
                         label = { Text("我的") }
                     )
                 }
@@ -291,8 +335,15 @@ fun MainScreen(
                         onSearch = { performSearch() },
                         searchResults = searchResults,
                         searchHistory = searchHistory,
+                        searchSuggestions = searchSuggestions,
+                        onSelectSuggestion = { q ->
+                            searchQuery = q
+                            searchSuggestions = emptyList()
+                            performSearch(q)
+                        },
                         onSelectHistoryQuery = { q ->
                             searchQuery = q
+                            searchSuggestions = emptyList()
                             performSearch(q)
                         },
                         onDeleteHistoryQuery = { q ->
@@ -309,6 +360,8 @@ fun MainScreen(
                         downloadsCount = downloadsList.size,
                         hasSearched = hasSearched,
                         onClearSearchResult = {
+                            searchQuery = ""
+                            searchSuggestions = emptyList()
                             searchResults = emptyList()
                             hasSearched = false
                         },
@@ -328,6 +381,9 @@ fun MainScreen(
                         downloadStatusMap = downloadStatusMap,
                         onSongClick = { song ->
                             playerManager.playSong(song, searchResults)
+                        },
+                        onToggleFavorite = { song ->
+                            handleToggleFavorite(song)
                         },
                         onDownload = { song ->
                             handleDownload(song)
@@ -397,6 +453,19 @@ fun MainScreen(
                             coroutineScope.launch {
                                 snackbarHostState.showSnackbar("播放历史已清空")
                             }
+                        },
+                        onBatchRemoveFavorites = { ids ->
+                            coroutineScope.launch {
+                                localRepo.removeFavorites(ids)
+                            }
+                        },
+                        onBatchDeleteDownloads = { ids ->
+                            coroutineScope.launch {
+                                localRepo.deleteDownloads(ids)
+                            }
+                        },
+                        onBatchRemoveHistory = { ids ->
+                            localRepo.removePlayHistoryItems(ids)
                         },
                         onPlayAllFavorites = {
                             if (favoritesList.isNotEmpty()) {

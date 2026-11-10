@@ -53,6 +53,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.personal.musicapp.ui.theme.WarningAmber
+import com.personal.musicapp.ui.theme.WarningTint
 import com.personal.musicapp.util.AppLogger
 import com.personal.musicapp.util.LogEntry
 
@@ -244,14 +246,14 @@ fun DebugLogDialog(
 private fun LogItemRow(item: LogEntry) {
     val levelColor = when (item.level) {
         "E" -> MaterialTheme.colorScheme.error
-        "W" -> Color(0xFFF57C00)
+        "W" -> WarningAmber
         "I" -> MaterialTheme.colorScheme.primary
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
 
     val containerColor = when (item.level) {
         "E" -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f)
-        "W" -> Color(0xFFFFF3E0)
+        "W" -> WarningTint
         else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
     }
 

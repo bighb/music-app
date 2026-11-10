@@ -146,6 +146,15 @@ class LocalMusicRepository(private val context: Context) {
         AppLogger.i(tag, "Removed favorite: ${target?.title ?: songId}")
     }
 
+    suspend fun removeFavorites(songIds: Set<String>) = withContext(Dispatchers.IO) {
+        if (songIds.isEmpty()) return@withContext
+        val current = _favorites.value.toMutableList()
+        current.removeAll { it.id in songIds }
+        _favorites.value = current
+        saveFavoritesToFile(current)
+        AppLogger.i(tag, "Batch removed ${songIds.size} favorites")
+    }
+
     // ==================== Downloads ====================
 
     private fun loadDownloads() {
@@ -321,6 +330,41 @@ class LocalMusicRepository(private val context: Context) {
         AppLogger.i(tag, "Deleted download: ${targetSong?.title ?: songId}")
     }
 
+    suspend fun deleteDownloads(songIds: Set<String>) = withContext(Dispatchers.IO) {
+        if (songIds.isEmpty()) return@withContext
+        var targetSongs: List<Song> = emptyList()
+        var currentDownloadsList: List<Song> = emptyList()
+        _downloads.update { current ->
+            val list = current.toMutableList()
+            targetSongs = list.filter { it.id in songIds }
+            list.removeAll { it.id in songIds }
+            currentDownloadsList = list
+            list
+        }
+        saveDownloadsToFile(currentDownloadsList)
+        targetSongs.forEach { deleteCachedFiles(it) }
+
+        _favorites.update { current ->
+            val list = current.toMutableList()
+            var changed = false
+            for (i in list.indices) {
+                if (list[i].id in songIds) {
+                    list[i] = list[i].copy(localAudioPath = null, localCoverPath = null)
+                    changed = true
+                }
+            }
+            if (changed) saveFavoritesToFile(list)
+            list
+        }
+
+        _downloadStates.update { current ->
+            val updated = current.toMutableMap()
+            songIds.forEach { updated[it] = DownloadState.NotDownloaded }
+            updated
+        }
+        AppLogger.i(tag, "Batch deleted ${songIds.size} downloads")
+    }
+
     private suspend fun resolveDownloadUrl(song: Song): String? {
         val raw = song.audioUrl
         if (raw.startsWith("youtube://")) {
@@ -473,6 +517,17 @@ class LocalMusicRepository(private val context: Context) {
             current.removeAll { it.id == songId }
             _playHistory.value = current
             savePlayHistoryToFile(current)
+        }
+    }
+
+    fun removePlayHistoryItems(songIds: Set<String>) {
+        if (songIds.isEmpty()) return
+        scope.launch {
+            val current = _playHistory.value.toMutableList()
+            current.removeAll { it.id in songIds }
+            _playHistory.value = current
+            savePlayHistoryToFile(current)
+            AppLogger.i(tag, "Batch removed ${songIds.size} history items")
         }
     }
 

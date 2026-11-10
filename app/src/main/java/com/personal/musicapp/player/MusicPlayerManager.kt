@@ -8,8 +8,12 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.database.StandaloneDatabaseProvider
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.cache.CacheDataSource
+import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
+import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import com.personal.musicapp.MusicApplication
@@ -32,6 +36,7 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
 class MusicPlayerManager(private val context: Context) {
@@ -48,14 +53,43 @@ class MusicPlayerManager(private val context: Context) {
         .readTimeout(5000, TimeUnit.MILLISECONDS)
         .build()
 
+    companion object {
+        @Volatile
+        private var simpleCacheInstance: SimpleCache? = null
+
+        fun getSimpleCache(context: Context): SimpleCache {
+            return simpleCacheInstance ?: synchronized(this) {
+                simpleCacheInstance ?: run {
+                    val cacheDir = File(context.cacheDir, "media_cache")
+                    if (!cacheDir.exists()) cacheDir.mkdirs()
+                    val databaseProvider = StandaloneDatabaseProvider(context)
+                    val evictor = LeastRecentlyUsedCacheEvictor(500 * 1024 * 1024L) // 500 MB LRU Cache
+                    SimpleCache(cacheDir, evictor, databaseProvider).also {
+                        simpleCacheInstance = it
+                    }
+                }
+            }
+        }
+    }
+
+    val resolvedUrlCache = ConcurrentHashMap<String, String>()
+    private var lastPrefetchedSongId: String? = null
+
+    private val simpleCache = getSimpleCache(context)
+
     private val httpDataSourceFactory = DefaultHttpDataSource.Factory()
         .setUserAgent(YouTubeAudioSource.SAFARI_USER_AGENT)
         .setAllowCrossProtocolRedirects(true)
         .setConnectTimeoutMs(15000)
         .setReadTimeoutMs(20000)
 
-    // Wraps httpDataSourceFactory to support file:// (local downloads/cache), content:// and http(s)://
-    private val dataSourceFactory = DefaultDataSource.Factory(context, httpDataSourceFactory)
+    private val cacheDataSourceFactory = CacheDataSource.Factory()
+        .setCache(simpleCache)
+        .setUpstreamDataSourceFactory(httpDataSourceFactory)
+        .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+
+    // Wraps cacheDataSourceFactory to support file:// (local downloads/cache), content:// and cached http(s)://
+    private val dataSourceFactory = DefaultDataSource.Factory(context, cacheDataSourceFactory)
 
     val exoPlayer: ExoPlayer = ExoPlayer.Builder(context)
         .setMediaSourceFactory(DefaultMediaSourceFactory(context).setDataSourceFactory(dataSourceFactory))
@@ -150,7 +184,47 @@ class MusicPlayerManager(private val context: Context) {
                         durationMs = duration
                     )
                 }
+                checkAndTriggerPreload(currentPos, duration)
                 delay(300)
+            }
+        }
+    }
+
+    private fun checkAndTriggerPreload(currentPos: Long, duration: Long) {
+        if (duration <= 15000L) return
+        val remaining = duration - currentPos
+        val progressRatio = currentPos.toFloat() / duration
+        if (remaining <= 15000L || progressRatio >= 0.85f) {
+            val state = _playerState.value
+            if (state.playlist.size > 1) {
+                val nextIndex = when (state.playbackMode) {
+                    PlaybackMode.SHUFFLE -> (state.currentIndex + 1) % state.playlist.size
+                    else -> (state.currentIndex + 1) % state.playlist.size
+                }
+                val nextSong = state.playlist.getOrNull(nextIndex)
+                if (nextSong != null && nextSong.id != lastPrefetchedSongId) {
+                    lastPrefetchedSongId = nextSong.id
+                    prefetchNextTrack(nextSong)
+                }
+            }
+        }
+    }
+
+    fun prefetchNextTrack(song: Song) {
+        if (resolvedUrlCache.containsKey(song.id)) return
+        val localAudio = song.localAudioPath ?: MusicApplication.instance.localRepository.downloads.value.find { it.id == song.id }?.localAudioPath
+        if (!localAudio.isNullOrEmpty() && File(localAudio).exists()) return
+
+        scope.launch(Dispatchers.IO) {
+            try {
+                AppLogger.d(tag, "Pre-resolving next track stream for 《${song.title}》...")
+                val url = resolveMediaDirectUrl(song)
+                if (!url.isNullOrEmpty()) {
+                    resolvedUrlCache[song.id] = url
+                    AppLogger.i(tag, "Pre-resolved next track stream for 《${song.title}》: $url")
+                }
+            } catch (e: Exception) {
+                AppLogger.w(tag, "Pre-resolve failed for 《${song.title}》", e)
             }
         }
     }
@@ -161,6 +235,7 @@ class MusicPlayerManager(private val context: Context) {
     }
 
     fun playSong(song: Song, playlist: List<Song> = listOf(song), autoSkipOnFailure: Boolean = true) {
+        lastPrefetchedSongId = null
         val index = playlist.indexOfFirst { it.id == song.id }.let { if (it == -1) 0 else it }
         _playerState.update {
             it.copy(
@@ -269,8 +344,17 @@ class MusicPlayerManager(private val context: Context) {
     }
 
     private suspend fun resolveMediaDirectUrl(song: Song): String? = withContext(Dispatchers.IO) {
+        val cached = resolvedUrlCache[song.id]
+        if (!cached.isNullOrEmpty()) {
+            AppLogger.d(tag, "Using pre-resolved direct stream for 《${song.title}》: $cached")
+            return@withContext cached
+        }
+
         val rawUrl = song.audioUrl
-        if (!rawUrl.startsWith("http") && !rawUrl.startsWith("kuwo://") && !rawUrl.startsWith("youtube://")) return@withContext rawUrl
+        if (!rawUrl.startsWith("http") && !rawUrl.startsWith("kuwo://") && !rawUrl.startsWith("youtube://")) {
+            resolvedUrlCache[song.id] = rawUrl
+            return@withContext rawUrl
+        }
 
         // 0. YouTube protocol (youtube://$videoId)
         if (rawUrl.startsWith("youtube://")) {
@@ -278,6 +362,7 @@ class MusicPlayerManager(private val context: Context) {
             try {
                 val streamUrl = MusicApplication.instance.audioSourceManager.resolveYouTubeStream(videoId)
                 if (!streamUrl.isNullOrEmpty() && streamUrl.startsWith("http")) {
+                    resolvedUrlCache[song.id] = streamUrl
                     return@withContext streamUrl
                 }
             } catch (e: Exception) {
@@ -288,6 +373,7 @@ class MusicPlayerManager(private val context: Context) {
             val fallbackUrl = KuwoAudioHelper.getPlayableUrl(song.title, song.artist)
             if (!fallbackUrl.isNullOrEmpty()) {
                 AppLogger.i(tag, "Fallback from YouTube to Kuwo search stream for 《${song.title}》")
+                resolvedUrlCache[song.id] = fallbackUrl
                 return@withContext fallbackUrl
             }
             return@withContext null
@@ -305,6 +391,7 @@ class MusicPlayerManager(private val context: Context) {
                         if (KuwoAudioHelper.isKuwoPromoAudio(streamUrl)) {
                             AppLogger.w(tag, "Kuwo stream for rid $rid is copyright promo audio (588957081.mp3), ignoring")
                         } else {
+                            resolvedUrlCache[song.id] = streamUrl
                             return@withContext streamUrl
                         }
                     }
@@ -317,6 +404,7 @@ class MusicPlayerManager(private val context: Context) {
             val fallbackUrl = KuwoAudioHelper.getPlayableUrl(song.title, song.artist)
             if (!fallbackUrl.isNullOrEmpty()) {
                 AppLogger.i(tag, "Fallback to Kuwo search stream for 《${song.title}》")
+                resolvedUrlCache[song.id] = fallbackUrl
                 return@withContext fallbackUrl
             }
             return@withContext null
@@ -335,7 +423,9 @@ class MusicPlayerManager(private val context: Context) {
                     if (!location.isNullOrEmpty()) {
                         // Check if Netease redirected to 404 (VIP or copyrighted)
                         if (!location.contains("/404") && !location.contains("404.html")) {
-                            return@withContext location.replace("http://", "https://")
+                            val target = location.replace("http://", "https://")
+                            resolvedUrlCache[song.id] = target
+                            return@withContext target
                         } else {
                             AppLogger.w(tag, "Song 《${song.title}》 redirected to 404 on Netease, cascading to Kuwo fallback...")
                         }
@@ -349,12 +439,14 @@ class MusicPlayerManager(private val context: Context) {
             val fallbackUrl = KuwoAudioHelper.getPlayableUrl(song.title, song.artist)
             if (!fallbackUrl.isNullOrEmpty()) {
                 AppLogger.i(tag, "Recovered 《${song.title}》 via Kuwo fallback stream")
+                resolvedUrlCache[song.id] = fallbackUrl
                 return@withContext fallbackUrl
             }
 
             return@withContext null
         }
 
+        resolvedUrlCache[song.id] = rawUrl
         return@withContext rawUrl
     }
 

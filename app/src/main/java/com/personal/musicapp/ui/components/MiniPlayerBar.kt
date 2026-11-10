@@ -2,14 +2,18 @@ package com.personal.musicapp.ui.components
 
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -17,6 +21,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -36,6 +41,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -43,17 +51,23 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.personal.musicapp.player.PlayerState
+import com.personal.musicapp.ui.theme.BorderLight
 import com.personal.musicapp.ui.theme.InkBlack
 import com.personal.musicapp.ui.theme.RosePrimary
 import com.personal.musicapp.ui.theme.SlateDark
 import com.personal.musicapp.ui.theme.SlateMuted
+import kotlin.math.roundToInt
 
 @Composable
 fun MiniPlayerBar(
@@ -61,10 +75,12 @@ fun MiniPlayerBar(
     onBarClick: () -> Unit,
     onTogglePlay: () -> Unit,
     onSkipNext: () -> Unit,
+    onSkipPrevious: () -> Unit = {},
     onOpenQueue: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val song = playerState.currentSong ?: return
+    val haptic = LocalHapticFeedback.current
 
     val infiniteTransition = rememberInfiniteTransition(label = "mini_disc_rotation")
     val rotation by infiniteTransition.animateFloat(
@@ -81,126 +97,172 @@ fun MiniPlayerBar(
         (playerState.currentPositionMs.toFloat() / playerState.durationMs.toFloat()).coerceIn(0f, 1f)
     } else 0f
 
+    var dragOffsetX by remember { mutableFloatStateOf(0f) }
+    val animatedOffsetX by animateFloatAsState(
+        targetValue = dragOffsetX,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label = "mini_bar_swipe_offset"
+    )
+
     Surface(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 6.dp)
-            .shadow(10.dp, RoundedCornerShape(27.dp))
-            .border(BorderStroke(1.dp, Color(0xFFE5E7EB)), RoundedCornerShape(27.dp))
-            .clip(RoundedCornerShape(27.dp))
+            .shadow(10.dp, RoundedCornerShape(28.dp))
+            .border(BorderStroke(1.dp, BorderLight), RoundedCornerShape(28.dp))
+            .clip(RoundedCornerShape(28.dp))
+            .pointerInput(song.id) {
+                detectHorizontalDragGestures(
+                    onDragStart = { dragOffsetX = 0f },
+                    onHorizontalDrag = { change, dragAmount ->
+                        change.consume()
+                        dragOffsetX = (dragOffsetX + dragAmount * 0.45f).coerceIn(-120f, 120f)
+                    },
+                    onDragEnd = {
+                        when {
+                            dragOffsetX < -42f -> {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                onSkipNext()
+                            }
+                            dragOffsetX > 42f -> {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                onSkipPrevious()
+                            }
+                        }
+                        dragOffsetX = 0f
+                    },
+                    onDragCancel = { dragOffsetX = 0f }
+                )
+            }
             .clickable(onClick = onBarClick),
-        color = Color(0xFFFFFFFF),
+        color = MaterialTheme.colorScheme.surface,
         tonalElevation = 6.dp
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(58.dp)
-                .padding(start = 8.dp, end = 12.dp),
+                .padding(start = 8.dp, end = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Kugou-style mini vinyl disc
-            Box(
+            // Swipable Track Info Section (Disc + Title/Artist)
+            Row(
                 modifier = Modifier
-                    .size(46.dp)
-                    .clip(CircleShape)
-                    .background(
-                        Brush.radialGradient(
-                            colors = listOf(Color(0xFF2D2D2D), Color(0xFF151515))
-                        )
-                    )
-                    .border(1.dp, Color(0xFF3F3F46), CircleShape)
-                    .rotate(if (playerState.isPlaying) rotation else 0f),
-                contentAlignment = Alignment.Center
+                    .weight(1f)
+                    .offset { IntOffset(animatedOffsetX.roundToInt(), 0) },
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                // Vinyl inner artwork
+                // Vinyl disc
                 Box(
                     modifier = Modifier
-                        .size(30.dp)
+                        .size(44.dp)
                         .clip(CircleShape)
-                        .background(Color(0xFFE4E4E7)),
+                        .background(
+                            Brush.radialGradient(
+                                colors = listOf(Color(0xFF2D2D2D), Color(0xFF151515))
+                            )
+                        )
+                        .border(1.dp, Color(0xFF3F3F46), CircleShape)
+                        .rotate(if (playerState.isPlaying) rotation else 0f),
                     contentAlignment = Alignment.Center
                 ) {
-                    if (song.displayCover.isNotEmpty()) {
-                        AsyncImage(
-                            model = song.displayCover,
-                            contentDescription = song.title,
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop
+                    Box(
+                        modifier = Modifier
+                            .size(29.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.surfaceVariant),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (song.displayCover.isNotEmpty()) {
+                            AsyncImage(
+                                model = song.displayCover,
+                                contentDescription = song.title,
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.MusicNote,
+                                contentDescription = null,
+                                tint = RosePrimary,
+                                modifier = Modifier.size(15.dp)
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(10.dp))
+
+                // Song Title & Artist / Status
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = song.title,
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            color = InkBlack
+                        ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    val currentError = playerState.playerError
+                    if (currentError != null) {
+                        Text(
+                            text = currentError,
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                color = MaterialTheme.colorScheme.error,
+                                fontSize = 11.sp
+                            ),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    } else if (playerState.isBuffering) {
+                        Text(
+                            text = "正在缓冲解析音源...",
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                color = RosePrimary,
+                                fontSize = 11.sp
+                            ),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     } else {
-                        Icon(
-                            imageVector = Icons.Default.MusicNote,
-                            contentDescription = null,
-                            tint = RosePrimary,
-                            modifier = Modifier.size(16.dp)
+                        Text(
+                            text = "${song.artist} · 左右轻滑切歌",
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                color = SlateMuted,
+                                fontSize = 11.sp
+                            ),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.width(10.dp))
-
-            // Song Title & Artist / Status
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = song.title,
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        color = InkBlack
-                    ),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                val currentError = playerState.playerError
-                if (currentError != null) {
-                    Text(
-                        text = currentError,
-                        style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.error, fontSize = 11.sp),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                } else if (playerState.isBuffering) {
-                    Text(
-                        text = "正在缓冲解析音源...",
-                        style = MaterialTheme.typography.bodySmall.copy(color = RosePrimary, fontSize = 11.sp),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                } else {
-                    Text(
-                        text = song.artist,
-                        style = MaterialTheme.typography.bodySmall.copy(color = SlateMuted),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-
-            // Circular progress indicator wrapping Play/Pause button
+            // Play/Pause button with Circular progress ring (48dp touch area)
             Box(
-                modifier = Modifier.size(36.dp),
+                modifier = Modifier.size(48.dp),
                 contentAlignment = Alignment.Center
             ) {
                 if (playerState.isBuffering) {
                     CircularProgressIndicator(
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier.size(34.dp),
                         strokeWidth = 2.dp,
                         color = RosePrimary
                     )
                 } else {
                     CircularProgressIndicator(
                         progress = { progress },
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier.size(34.dp),
                         strokeWidth = 2.dp,
                         color = RosePrimary,
-                        trackColor = Color(0xFFF3F4F6)
+                        trackColor = MaterialTheme.colorScheme.surfaceVariant
                     )
                 }
 
                 IconButton(
                     onClick = onTogglePlay,
-                    modifier = Modifier.size(32.dp)
+                    modifier = Modifier.size(48.dp)
                 ) {
                     Icon(
                         imageVector = if (playerState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
@@ -211,12 +273,10 @@ fun MiniPlayerBar(
                 }
             }
 
-            Spacer(modifier = Modifier.width(4.dp))
-
             // Next Track
             IconButton(
                 onClick = onSkipNext,
-                modifier = Modifier.size(36.dp)
+                modifier = Modifier.size(48.dp)
             ) {
                 Icon(
                     imageVector = Icons.Default.SkipNext,
@@ -229,7 +289,7 @@ fun MiniPlayerBar(
             if (onOpenQueue != null) {
                 IconButton(
                     onClick = onOpenQueue,
-                    modifier = Modifier.size(36.dp)
+                    modifier = Modifier.size(48.dp)
                 ) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.QueueMusic,

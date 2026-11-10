@@ -3,6 +3,7 @@ package com.personal.musicapp
 import android.app.Application
 import com.personal.musicapp.data.local.LocalMusicRepository
 import com.personal.musicapp.data.source.AudioSourceManager
+import com.personal.musicapp.data.source.LyricRepository
 import com.personal.musicapp.player.MusicPlayerManager
 
 class MusicApplication : Application() {
@@ -21,6 +22,9 @@ class MusicApplication : Application() {
     lateinit var audioSourceManager: AudioSourceManager
         private set
 
+    lateinit var lyricRepository: LyricRepository
+        private set
+
     override fun onCreate() {
         super.onCreate()
         instance = this
@@ -28,6 +32,7 @@ class MusicApplication : Application() {
         localRepository = LocalMusicRepository(this)
         playerManager = MusicPlayerManager(this)
         audioSourceManager = AudioSourceManager(cookieProvider = { localRepository.youtubeCookie.value })
+        lyricRepository = LyricRepository(this)
     }
 
     override fun onTerminate() {
