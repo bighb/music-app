@@ -18,7 +18,7 @@ class DouyinAudioSource(
 
     override val sourceName: String = "抖音原声"
 
-    private val client = OkHttpClient.Builder()
+    private val client = HttpPolicy.shared.newBuilder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
         .followRedirects(true)

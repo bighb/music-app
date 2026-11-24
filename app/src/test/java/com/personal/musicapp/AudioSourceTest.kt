@@ -9,10 +9,12 @@ import okhttp3.Request
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
+import org.junit.Ignore
 import org.junit.Test
 
 class AudioSourceTest {
 
+    @Ignore("live network，见 docs/VERIFICATION.md")
     @Test
     fun testKuwoFallbackForRestrictedSong() = runBlocking {
         // Song that is restricted on Netease
@@ -32,6 +34,7 @@ class AudioSourceTest {
         }
     }
 
+    @Ignore("live network，见 docs/VERIFICATION.md")
     @Test
     fun testAudioSourceManagerAggregatedSearch() = runBlocking {
         val manager = AudioSourceManager()
@@ -51,6 +54,7 @@ class AudioSourceTest {
         }
     }
 
+    @Ignore("live network，见 docs/VERIFICATION.md")
     @Test
     fun testNetMusicSearchAndCovers() = runBlocking {
         val source = NetMusicAudioSource()

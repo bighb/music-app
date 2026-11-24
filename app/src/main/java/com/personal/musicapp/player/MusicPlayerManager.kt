@@ -9,8 +9,10 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.database.StandaloneDatabaseProvider
+import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
@@ -18,10 +20,14 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import com.personal.musicapp.MusicApplication
 import com.personal.musicapp.data.model.Song
-import com.personal.musicapp.data.source.KuwoAudioHelper
-import com.personal.musicapp.data.source.YouTubeAudioSource
+import com.personal.musicapp.data.source.AudioFileVerifier
+import com.personal.musicapp.data.source.FailureKind
+import com.personal.musicapp.data.source.HttpPolicy
+import com.personal.musicapp.data.source.PlaceholderGate
+import com.personal.musicapp.data.source.SourceDiagnostics
+import com.personal.musicapp.data.source.StreamResolveException
 import com.personal.musicapp.util.AppLogger
-import com.personal.musicapp.util.awaitResponse
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -32,28 +38,42 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import okhttp3.OkHttpClient
-import okhttp3.Request
+import kotlinx.coroutines.runBlocking
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.TimeUnit
 
+/**
+ * ExoPlayer owns the real queue: every song is a MediaItem whose URI is the source's
+ * placeholder (`kuwo://rid`, `youtube://id`, Netease outer link) and is resolved to a stream
+ * URL only when its bytes are first read. That is what makes skip-to-next work for Bluetooth
+ * AVRCP and the notification: the timeline the system sees is the actual playlist.
+ */
 class MusicPlayerManager(private val context: Context) {
 
     private val tag = "MusicPlayerManager"
     private val scope = CoroutineScope(Dispatchers.Main)
-    private var progressJob: Job? = null
-    private var prepareJob: Job? = null
 
-    private val redirectResolverClient = OkHttpClient.Builder()
-        .followRedirects(false)
-        .followSslRedirects(false)
-        .connectTimeout(5000, TimeUnit.MILLISECONDS)
-        .readTimeout(5000, TimeUnit.MILLISECONDS)
-        .build()
+    private val _playerState = MutableStateFlow(PlayerState())
+    val playerState: StateFlow<PlayerState> = _playerState.asStateFlow()
+
+    private var progressJob: Job? = null
+    private var autoSkipJob: Job? = null
+    private var lastPrefetchedSongId: String? = null
+
+    @Volatile
+    private var placeholderRejectedFor: String? = null
+    private var staleLinkRetriedFor: String? = null
+    private var consecutiveFailures = 0
+
+    /** Placeholder-URI string -> Song. Written on main, read on ExoPlayer's loading thread. */
+    private val songsByUri = ConcurrentHashMap<String, Song>()
 
     companion object {
+        private const val AUTO_SKIP_DELAY_MS = 1500L
+        private const val MAX_CONSECUTIVE_FAILURES = 3
+        private const val PREVIOUS_RESTART_MS = 3000L
+        private const val PRELOAD_WINDOW_MS = 15000L
+
         @Volatile
         private var simpleCacheInstance: SimpleCache? = null
 
@@ -72,13 +92,10 @@ class MusicPlayerManager(private val context: Context) {
         }
     }
 
-    val resolvedUrlCache = ConcurrentHashMap<String, String>()
-    private var lastPrefetchedSongId: String? = null
-
     private val simpleCache = getSimpleCache(context)
 
     private val httpDataSourceFactory = DefaultHttpDataSource.Factory()
-        .setUserAgent(YouTubeAudioSource.SAFARI_USER_AGENT)
+        .setUserAgent(HttpPolicy.YOUTUBE_USER_AGENT)
         .setAllowCrossProtocolRedirects(true)
         .setConnectTimeoutMs(15000)
         .setReadTimeoutMs(20000)
@@ -88,8 +105,26 @@ class MusicPlayerManager(private val context: Context) {
         .setUpstreamDataSourceFactory(httpDataSourceFactory)
         .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
 
-    // Wraps cacheDataSourceFactory to support file:// (local downloads/cache), content:// and cached http(s)://
-    private val dataSourceFactory = DefaultDataSource.Factory(context, cacheDataSourceFactory)
+    private val streamResolver get() = MusicApplication.instance.streamResolver
+
+    /** Runs on ExoPlayer's loading thread; bounded by the resolver's own per-call and total deadlines. */
+    private val placeholderResolver = object : ResolvingDataSource.Resolver {
+        override fun resolveDataSpec(dataSpec: DataSpec): DataSpec {
+            val placeholder = dataSpec.uri.toString()
+            val song = songsByUri[placeholder] ?: return dataSpec
+            val result = runBlocking { streamResolver.resolve(song) }
+            SourceDiagnostics.logResolve(result, song.id, song.title, song.source)
+            val stream = result.stream ?: throw StreamResolveException(result.failure, result.describeFailures())
+            return dataSpec.withUri(Uri.parse(stream.url))
+        }
+    }
+
+    // ResolvingDataSource -> CacheDataSource -> DefaultHttpDataSource, wrapped so that
+    // file:// (local downloads), content:// and plain http(s):// keep working unchanged.
+    private val dataSourceFactory = DefaultDataSource.Factory(
+        context,
+        ResolvingDataSource.Factory(cacheDataSourceFactory, placeholderResolver)
+    )
 
     val exoPlayer: ExoPlayer = ExoPlayer.Builder(context)
         .setMediaSourceFactory(DefaultMediaSourceFactory(context).setDataSourceFactory(dataSourceFactory))
@@ -103,21 +138,35 @@ class MusicPlayerManager(private val context: Context) {
         .setHandleAudioBecomingNoisy(true)
         .build()
 
-    private val _playerState = MutableStateFlow(PlayerState())
-    val playerState: StateFlow<PlayerState> = _playerState.asStateFlow()
-
     private val playerListener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             AppLogger.d(tag, "onIsPlayingChanged: $isPlaying")
-            _playerState.update { it.copy(isPlaying = isPlaying, playerError = null) }
+            _playerState.update { it.copy(isPlaying = isPlaying, playerError = null, playbackFailure = null) }
             if (isPlaying) {
+                consecutiveFailures = 0
                 startProgressTracker()
-                // Record to play history on active playback
-                _playerState.value.currentSong?.let { song ->
-                    MusicApplication.instance.localRepository.recordPlayback(song)
-                }
+                _playerState.value.currentSong?.let { recordPlayback(it) }
             } else {
                 stopProgressTracker()
+            }
+        }
+
+        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            val song = mediaItem?.mediaId?.let { id -> _playerState.value.playlist.find { it.id == id } } ?: return
+            val index = _playerState.value.playlist.indexOfFirst { it.id == song.id }
+            if (index == -1) return
+            lastPrefetchedSongId = null
+            AppLogger.i(tag, "Now playing #$index 《${song.title}》 (${song.source}) reason=$reason")
+            _playerState.update {
+                it.copy(
+                    currentSong = song,
+                    currentIndex = index,
+                    currentPositionMs = 0L,
+                    durationMs = song.durationMs,
+                    isBuffering = true,
+                    playerError = null,
+                    playbackFailure = null
+                )
             }
         }
 
@@ -125,36 +174,15 @@ class MusicPlayerManager(private val context: Context) {
             val isBuffering = playbackState == Player.STATE_BUFFERING
             val duration = if (exoPlayer.duration > 0) exoPlayer.duration else _playerState.value.durationMs
             AppLogger.d(tag, "onPlaybackStateChanged: state=$playbackState, duration=$duration")
-            _playerState.update {
-                it.copy(
-                    isBuffering = isBuffering,
-                    durationMs = duration
-                )
-            }
+            _playerState.update { it.copy(isBuffering = isBuffering, durationMs = duration) }
             if (playbackState == Player.STATE_READY) {
-                _playerState.value.currentSong?.let { song ->
-                    MusicApplication.instance.localRepository.recordPlayback(song)
-                }
-            }
-            if (playbackState == Player.STATE_ENDED) {
-                handlePlaybackEnded()
+                if (rejectPlaceholderStream()) return
+                _playerState.value.currentSong?.let { recordPlayback(it) }
             }
         }
 
         override fun onPlayerError(error: PlaybackException) {
-            val errorMsg = "播放出错: ${error.errorCodeName} (${error.errorCode}) - ${error.localizedMessage ?: "未知解码或网络问题"}"
-            AppLogger.e(tag, "ExoPlayer Error for 《${_playerState.value.currentSong?.title}》: $errorMsg", error)
-            try {
-                exoPlayer.stop()
-                exoPlayer.clearMediaItems()
-            } catch (_: Exception) {}
-            _playerState.update {
-                it.copy(
-                    isPlaying = false,
-                    isBuffering = false,
-                    playerError = errorMsg
-                )
-            }
+            handlePlayerError(error)
         }
 
         override fun onPositionDiscontinuity(
@@ -162,14 +190,37 @@ class MusicPlayerManager(private val context: Context) {
             newPosition: Player.PositionInfo,
             reason: Int
         ) {
-            _playerState.update {
-                it.copy(currentPositionMs = newPosition.positionMs)
+            _playerState.update { it.copy(currentPositionMs = newPosition.positionMs) }
+        }
+
+        override fun onEvents(player: Player, events: Player.Events) {
+            val playlist = _playerState.value.playlist
+            val index = player.currentMediaItemIndex
+            val currentId = player.currentMediaItem?.mediaId
+            if (index in playlist.indices && playlist[index].id == currentId && index != _playerState.value.currentIndex) {
+                _playerState.update { it.copy(currentIndex = index, currentSong = playlist[index]) }
+            }
+
+            // The car head unit and the notification may change repeat/shuffle themselves.
+            val mirrored = when {
+                player.shuffleModeEnabled -> PlaybackMode.SHUFFLE
+                player.repeatMode == Player.REPEAT_MODE_ONE -> PlaybackMode.REPEAT_ONE
+                else -> PlaybackMode.REPEAT_ALL
+            }
+            if (mirrored != _playerState.value.playbackMode) {
+                AppLogger.i(tag, "Playback mode changed by a controller: ${mirrored.name}")
+                _playerState.update { it.copy(playbackMode = mirrored) }
             }
         }
     }
 
     init {
         exoPlayer.addListener(playerListener)
+        applyPlaybackMode(_playerState.value.playbackMode)
+    }
+
+    private fun recordPlayback(song: Song) {
+        MusicApplication.instance.localRepository.recordPlayback(song)
     }
 
     private fun startProgressTracker() {
@@ -178,53 +229,9 @@ class MusicPlayerManager(private val context: Context) {
             while (isActive) {
                 val currentPos = exoPlayer.currentPosition
                 val duration = if (exoPlayer.duration > 0) exoPlayer.duration else _playerState.value.durationMs
-                _playerState.update {
-                    it.copy(
-                        currentPositionMs = currentPos,
-                        durationMs = duration
-                    )
-                }
+                _playerState.update { it.copy(currentPositionMs = currentPos, durationMs = duration) }
                 checkAndTriggerPreload(currentPos, duration)
                 delay(300)
-            }
-        }
-    }
-
-    private fun checkAndTriggerPreload(currentPos: Long, duration: Long) {
-        if (duration <= 15000L) return
-        val remaining = duration - currentPos
-        val progressRatio = currentPos.toFloat() / duration
-        if (remaining <= 15000L || progressRatio >= 0.85f) {
-            val state = _playerState.value
-            if (state.playlist.size > 1) {
-                val nextIndex = when (state.playbackMode) {
-                    PlaybackMode.SHUFFLE -> (state.currentIndex + 1) % state.playlist.size
-                    else -> (state.currentIndex + 1) % state.playlist.size
-                }
-                val nextSong = state.playlist.getOrNull(nextIndex)
-                if (nextSong != null && nextSong.id != lastPrefetchedSongId) {
-                    lastPrefetchedSongId = nextSong.id
-                    prefetchNextTrack(nextSong)
-                }
-            }
-        }
-    }
-
-    fun prefetchNextTrack(song: Song) {
-        if (resolvedUrlCache.containsKey(song.id)) return
-        val localAudio = song.localAudioPath ?: MusicApplication.instance.localRepository.downloads.value.find { it.id == song.id }?.localAudioPath
-        if (!localAudio.isNullOrEmpty() && File(localAudio).exists()) return
-
-        scope.launch(Dispatchers.IO) {
-            try {
-                AppLogger.d(tag, "Pre-resolving next track stream for 《${song.title}》...")
-                val url = resolveMediaDirectUrl(song)
-                if (!url.isNullOrEmpty()) {
-                    resolvedUrlCache[song.id] = url
-                    AppLogger.i(tag, "Pre-resolved next track stream for 《${song.title}》: $url")
-                }
-            } catch (e: Exception) {
-                AppLogger.w(tag, "Pre-resolve failed for 《${song.title}》", e)
             }
         }
     }
@@ -234,9 +241,269 @@ class MusicPlayerManager(private val context: Context) {
         progressJob = null
     }
 
-    fun playSong(song: Song, playlist: List<Song> = listOf(song), autoSkipOnFailure: Boolean = true) {
+    private fun checkAndTriggerPreload(currentPos: Long, duration: Long) {
+        if (duration <= PRELOAD_WINDOW_MS || exoPlayer.mediaItemCount <= 1) return
+        val remaining = duration - currentPos
+        val progressRatio = currentPos.toFloat() / duration
+        if (remaining > PRELOAD_WINDOW_MS && progressRatio < 0.85f) return
+
+        if (exoPlayer.repeatMode == Player.REPEAT_MODE_ONE) return
+        val nextIndex = exoPlayer.nextMediaItemIndex.takeIf { it >= 0 } ?: return
+        val currentId = _playerState.value.currentSong?.id
+        val nextSong = _playerState.value.playlist.getOrNull(nextIndex) ?: return
+        if (nextSong.id == lastPrefetchedSongId || nextSong.id == currentId) return
+        lastPrefetchedSongId = nextSong.id
+        prefetchNextTrack(nextSong)
+    }
+
+    fun prefetchNextTrack(song: Song) {
+        if (streamResolver.peek(song.id) != null) return
+        if (localAudioFile(song) != null) return
+        scope.launch(Dispatchers.IO) {
+            try {
+                val result = streamResolver.resolve(song)
+                val outcome = result.stream?.let { "ok via ${it.sourceUsed}" } ?: result.failure.name.lowercase().replace('_', '-')
+                AppLogger.v(tag, "Pre-resolve 《${song.title}》: $outcome")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                AppLogger.v(tag, "Pre-resolve 《${song.title}》 failed: ${e.javaClass.simpleName}")
+            }
+        }
+    }
+
+    // ==================== Queue <-> ExoPlayer timeline ====================
+
+    private fun localAudioFile(song: Song): File? {
+        val path = song.localAudioPath
+            ?: MusicApplication.instance.localRepository.downloads.value.find { it.id == song.id }?.localAudioPath
+            ?: return null
+        val file = File(path)
+        if (AudioFileVerifier.isPlausible(file, song.durationMs)) return file
+        if (file.exists()) {
+            AppLogger.w(tag, "Local audio for 《${song.title}》 is implausibly small; using the network stream")
+            file.delete()
+        }
+        return null
+    }
+
+    private fun toMediaItem(song: Song): MediaItem {
+        val localFile = localAudioFile(song)
+        val uri = if (localFile != null) Uri.fromFile(localFile) else Uri.parse(song.audioUrl)
+        songsByUri[uri.toString()] = song
+
+        val coverPath = song.localCoverPath
+            ?: MusicApplication.instance.localRepository.downloads.value.find { it.id == song.id }?.localCoverPath
+        val artworkUri = when {
+            coverPath != null && File(coverPath).exists() -> Uri.fromFile(File(coverPath))
+            song.coverUrl.isNotEmpty() -> Uri.parse(song.coverUrl)
+            else -> null
+        }
+        val metadata = MediaMetadata.Builder()
+            .setTitle(song.title)
+            .setArtist(song.artist)
+            .setArtworkUri(artworkUri)
+            .build()
+        return MediaItem.Builder()
+            .setMediaId(song.id)
+            .setUri(uri)
+            .setMediaMetadata(metadata)
+            .build()
+    }
+
+    private fun queuedIds(): List<String> =
+        List(exoPlayer.mediaItemCount) { exoPlayer.getMediaItemAt(it).mediaId }
+
+    private fun queueMatches(playlist: List<Song>): Boolean {
+        if (exoPlayer.mediaItemCount != playlist.size) return false
+        for (i in playlist.indices) {
+            if (exoPlayer.getMediaItemAt(i).mediaId != playlist[i].id) return false
+        }
+        return true
+    }
+
+    /** Applies one queue edit in place so the current song keeps playing; rebuilds if the result differs. */
+    private fun editQueue(expectedIds: List<String>, edit: () -> Unit) {
+        try {
+            edit()
+        } catch (e: RuntimeException) {
+            AppLogger.w(tag, "Queue edit rejected (${e.javaClass.simpleName}); rebuilding timeline from state")
+            rebuildQueue()
+            return
+        }
+        if (queuedIds() != expectedIds) rebuildQueue()
+    }
+
+    /** Re-applies a single-row insert / removal / move to the ExoPlayer timeline. */
+    private fun syncQueue(oldIds: List<String>, newIds: List<String>, newPlaylist: List<Song>) {
+        when (val edit = queueEditFrom(oldIds, newIds)) {
+            is QueueEdit.Insert -> exoPlayer.addMediaItem(edit.index, toMediaItem(newPlaylist[edit.index]))
+            is QueueEdit.Remove -> exoPlayer.removeMediaItem(edit.index)
+            is QueueEdit.Move -> {
+                val movingCurrent = oldIds.getOrNull(edit.from) != null &&
+                    oldIds[edit.from] == exoPlayer.currentMediaItem?.mediaId
+                if (movingCurrent) {
+                    exoPlayer.moveMediaItem(edit.from, edit.to)
+                } else {
+                    // Remove + add has an unambiguous index meaning; moveMediaItem would make the
+                    // player advance to the next song if the moved row were the current one.
+                    val item = exoPlayer.getMediaItemAt(edit.from)
+                    exoPlayer.removeMediaItem(edit.from)
+                    exoPlayer.addMediaItem(edit.to, item)
+                }
+            }
+            QueueEdit.None -> Unit
+            QueueEdit.Rebuild -> throw IllegalStateException("queue changed shape")
+        }
+    }
+
+    private fun rebuildQueue() {
+        val state = _playerState.value
+        if (state.playlist.isEmpty()) return
+        val wasPlaying = state.isPlaying || exoPlayer.playWhenReady
+        val index = state.currentIndex.coerceIn(0, state.playlist.lastIndex)
+        exoPlayer.stop()
+        exoPlayer.setMediaItems(state.playlist.map { toMediaItem(it) }, index, 0L)
+        exoPlayer.prepare()
+        if (wasPlaying) exoPlayer.play()
+    }
+
+    private fun commitPlaylist(newPlaylist: List<Song>) {
+        val oldIds = queuedIds()
+        _playerState.update {
+            val idx = newPlaylist.indexOfFirst { s -> s.id == it.currentSong?.id }
+            it.copy(playlist = newPlaylist, currentIndex = if (idx != -1) idx else 0)
+        }
+        val newIds = newPlaylist.map { it.id }
+        editQueue(newIds) { syncQueue(oldIds, newIds, newPlaylist) }
+    }
+
+    private fun applyPlaybackMode(mode: PlaybackMode) {
+        exoPlayer.repeatMode = if (mode == PlaybackMode.REPEAT_ONE) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_ALL
+        exoPlayer.shuffleModeEnabled = mode == PlaybackMode.SHUFFLE
+    }
+
+    private fun playAtIndex(index: Int) {
+        val state = _playerState.value
+        if (state.playlist.isEmpty()) return
+        if (!queueMatches(state.playlist)) rebuildQueue()
+        if (exoPlayer.mediaItemCount == 0) return
+        placeholderRejectedFor = null
+        exoPlayer.seekTo(index.coerceIn(0, exoPlayer.mediaItemCount - 1), 0L)
+        if (exoPlayer.playbackState == Player.STATE_IDLE) exoPlayer.prepare()
+        exoPlayer.play()
+    }
+
+    private fun stopAndClearQueue() {
+        try {
+            exoPlayer.stop()
+            exoPlayer.clearMediaItems()
+        } catch (_: Exception) {
+        }
+        songsByUri.clear()
+        _playerState.update {
+            it.copy(
+                currentSong = null,
+                playlist = emptyList(),
+                currentIndex = 0,
+                isPlaying = false,
+                isBuffering = false,
+                currentPositionMs = 0L,
+                durationMs = 0L,
+                playerError = null,
+                playbackFailure = null
+            )
+        }
+    }
+
+    // ==================== Failure handling ====================
+
+    /**
+     * A stream that is far shorter than its catalogue entry is a preview placeholder. The
+     * URL is blacklisted and the same queue position is prepared again, so the resolver
+     * continues down its chain. Runs at most once per song.
+     */
+    private fun rejectPlaceholderStream(): Boolean {
+        val state = _playerState.value
+        val song = state.currentSong ?: return false
+        if (placeholderRejectedFor == song.id) return false
+        val actual = exoPlayer.duration
+        if (!PlaceholderGate.isDurationMismatch(song.durationMs, actual)) return false
+
+        placeholderRejectedFor = song.id
+        streamResolver.resolvedUrlFor(song.id)?.let { streamResolver.reject(song.id, it) }
+        SourceDiagnostics.logReject(song.id, "duration", actual, song.durationMs, "re-resolve")
+
+        val index = exoPlayer.currentMediaItemIndex
+        exoPlayer.stop()
+        exoPlayer.seekTo(index, 0L)
+        exoPlayer.prepare()
+        exoPlayer.play()
+        return true
+    }
+
+    private fun handlePlayerError(error: PlaybackException) {
+        autoSkipJob?.cancel()
+        val song = _playerState.value.currentSong
+        val resolveFailure = generateSequence<Throwable>(error) { it.cause }
+            .filterIsInstance<StreamResolveException>().firstOrNull()
+        val index = exoPlayer.currentMediaItemIndex
+        val wasPlaying = exoPlayer.playWhenReady
+
+        if (resolveFailure == null && song != null && staleLinkRetriedFor != song.id) {
+            // Not a resolve failure: most likely a CDN link that expired. Re-resolve once.
+            staleLinkRetriedFor = song.id
+            AppLogger.w(tag, "Stream failed for 《${song.title}》 (${error.errorCodeName}); re-resolving once")
+            streamResolver.evict(song.id)
+            exoPlayer.stop()
+            exoPlayer.seekTo(index, 0L)
+            exoPlayer.prepare()
+            if (wasPlaying) exoPlayer.play()
+            return
+        }
+
+        // Leave the error state; the queue is kept (never clearMediaItems here).
+        exoPlayer.stop()
+        val kind = resolveFailure?.kind ?: FailureKind.SOURCE_UNAVAILABLE
+        val detail = resolveFailure?.detail ?: error.errorCodeName
+        consecutiveFailures++
+        AppLogger.w(tag, "Giving up on 《${song?.title}》 failure=${kind.name.lowercase().replace('_', '-')} code=${error.errorCodeName} ($detail)")
+        _playerState.update {
+            it.copy(
+                isPlaying = false,
+                isBuffering = false,
+                playerError = failureMessage(it.currentSong?.title.orEmpty(), kind, detail),
+                playbackFailure = PlaybackFailure(kind, detail)
+            )
+        }
+        scheduleAutoSkip()
+    }
+
+    private fun scheduleAutoSkip() {
+        val state = _playerState.value
+        if (state.playlist.size <= 1 || exoPlayer.mediaItemCount <= 1) return
+        // A dead network must not burn through the whole queue.
+        if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+            AppLogger.w(tag, "Stopping auto-skip after $consecutiveFailures consecutive failures")
+            return
+        }
+        autoSkipJob = scope.launch {
+            delay(AUTO_SKIP_DELAY_MS)
+            val current = _playerState.value
+            if (current.playerError != null && current.playlist.size > 1) skipNext()
+        }
+    }
+
+    // ==================== Public playback API ====================
+
+    fun playSong(song: Song, playlist: List<Song> = listOf(song)) {
+        autoSkipJob?.cancel()
         lastPrefetchedSongId = null
-        val index = playlist.indexOfFirst { it.id == song.id }.let { if (it == -1) 0 else it }
+        placeholderRejectedFor = null
+        val index = playlist.indexOfFirst { it.id == song.id }.coerceAtLeast(0)
+        val sameQueue = queueMatches(playlist)
+        AppLogger.i(tag, "Preparing to play: 《${song.title}》 - ${song.artist} (${song.source}) queue=${playlist.size} sameQueue=$sameQueue")
+
         _playerState.update {
             it.copy(
                 currentSong = song,
@@ -245,209 +512,104 @@ class MusicPlayerManager(private val context: Context) {
                 currentPositionMs = 0L,
                 durationMs = song.durationMs,
                 isBuffering = true,
-                playerError = null
+                playerError = null,
+                playbackFailure = null
             )
         }
 
-        prepareJob?.cancel()
         try {
-            exoPlayer.stop()
-            exoPlayer.clearMediaItems()
-        } catch (_: Exception) {}
-
-        prepareJob = scope.launch {
-            try {
-                AppLogger.i(tag, "Preparing to play: 《${song.title}》 - ${song.artist}")
-
-                // Check local cached file first
-                var playFromLocal = false
-                var playUri: Uri? = null
-
-                val effectiveAudioPath = song.localAudioPath ?: MusicApplication.instance.localRepository.downloads.value.find { it.id == song.id }?.localAudioPath
-
-                if (!effectiveAudioPath.isNullOrEmpty()) {
-                    val localFile = File(effectiveAudioPath)
-                    if (localFile.exists() && localFile.length() >= 10000) {
-                        playFromLocal = true
-                        playUri = Uri.fromFile(localFile)
-                        AppLogger.i(tag, "Playing 《${song.title}》 from verified local cache: ${localFile.absolutePath} (${localFile.length() / 1024} KB)")
-                    } else {
-                        AppLogger.w(tag, "Local cache file missing or corrupted for 《${song.title}》, falling back to network stream")
-                        if (localFile.exists()) localFile.delete()
-                    }
-                }
-
-                if (!playFromLocal || playUri == null) {
-                    val directPlayUrl = resolveMediaDirectUrl(song)
-                    if (directPlayUrl.isNullOrEmpty()) {
-                        val errorMsg = "《${song.title}》暂无可用音源（受版权保护）"
-                        AppLogger.w(tag, errorMsg)
-                        _playerState.update {
-                            it.copy(
-                                isBuffering = false,
-                                isPlaying = false,
-                                playerError = errorMsg
-                            )
-                        }
-                        if (autoSkipOnFailure && playlist.size > 1) {
-                            delay(1500)
-                            skipNext()
-                        }
-                        return@launch
-                    }
-                    AppLogger.i(tag, "Resolved direct stream URL: $directPlayUrl")
-                    playUri = Uri.parse(directPlayUrl)
-                }
-
-                val effectiveCoverPath = song.localCoverPath ?: MusicApplication.instance.localRepository.downloads.value.find { it.id == song.id }?.localCoverPath
-                val artworkUri = when {
-                    effectiveCoverPath != null && File(effectiveCoverPath).exists() -> {
-                        Uri.fromFile(File(effectiveCoverPath))
-                    }
-                    song.coverUrl.isNotEmpty() -> Uri.parse(song.coverUrl)
-                    else -> null
-                }
-
-                val mediaMetadata = MediaMetadata.Builder()
-                    .setTitle(song.title)
-                    .setArtist(song.artist)
-                    .setArtworkUri(artworkUri)
-                    .build()
-
-                val mediaItem = MediaItem.Builder()
-                    .setMediaId(song.id)
-                    .setUri(playUri)
-                    .setMediaMetadata(mediaMetadata)
-                    .build()
-
-                exoPlayer.setMediaItem(mediaItem)
+            applyPlaybackMode(_playerState.value.playbackMode)
+            if (sameQueue) {
+                exoPlayer.seekTo(index, 0L)
+                if (exoPlayer.playbackState == Player.STATE_IDLE) exoPlayer.prepare()
+            } else {
+                songsByUri.clear()
+                exoPlayer.stop()
+                exoPlayer.setMediaItems(playlist.map { toMediaItem(it) }, index, 0L)
                 exoPlayer.prepare()
-                exoPlayer.play()
-            } catch (e: kotlinx.coroutines.CancellationException) {
-                throw e
-            } catch (e: Throwable) {
-                val errorMsg = "《${song.title}》播放异常: ${e.localizedMessage ?: "网络或解码错误"}"
-                AppLogger.e(tag, errorMsg, e)
-                _playerState.update {
-                    it.copy(
-                        isBuffering = false,
-                        isPlaying = false,
-                        playerError = errorMsg
-                    )
-                }
-                if (autoSkipOnFailure && playlist.size > 1) {
-                    delay(1500)
-                    skipNext()
-                }
+            }
+            exoPlayer.play()
+        } catch (e: IllegalStateException) {
+            AppLogger.e(tag, "Failed to start playback of 《${song.title}》", e)
+            _playerState.update {
+                it.copy(
+                    isBuffering = false,
+                    isPlaying = false,
+                    playerError = failureMessage(song.title, FailureKind.SOURCE_UNAVAILABLE, ""),
+                    playbackFailure = PlaybackFailure(FailureKind.SOURCE_UNAVAILABLE, "")
+                )
             }
         }
     }
 
-    private suspend fun resolveMediaDirectUrl(song: Song): String? = withContext(Dispatchers.IO) {
-        val cached = resolvedUrlCache[song.id]
-        if (!cached.isNullOrEmpty()) {
-            AppLogger.d(tag, "Using pre-resolved direct stream for 《${song.title}》: $cached")
-            return@withContext cached
+    fun retryCurrent() {
+        val state = _playerState.value
+        val song = state.currentSong ?: return
+        streamResolver.evict(song.id)
+        consecutiveFailures = 0
+        AppLogger.i(tag, "Retrying 《${song.title}》 on user request")
+        playSong(song, state.playlist)
+    }
+
+    fun togglePlayPause() {
+        if (exoPlayer.isPlaying) {
+            exoPlayer.pause()
+            return
         }
-
-        val rawUrl = song.audioUrl
-        if (!rawUrl.startsWith("http") && !rawUrl.startsWith("kuwo://") && !rawUrl.startsWith("youtube://")) {
-            resolvedUrlCache[song.id] = rawUrl
-            return@withContext rawUrl
+        val state = _playerState.value
+        if (exoPlayer.playbackState == Player.STATE_IDLE && state.currentSong != null) {
+            if (!queueMatches(state.playlist)) rebuildQueue()
+            if (exoPlayer.playbackState == Player.STATE_IDLE) {
+                val index = state.currentIndex.coerceIn(0, maxOf(0, exoPlayer.mediaItemCount - 1))
+                exoPlayer.seekTo(index, 0L)
+                exoPlayer.prepare()
+            }
         }
+        exoPlayer.play()
+    }
 
-        // 0. YouTube protocol (youtube://$videoId)
-        if (rawUrl.startsWith("youtube://")) {
-            val videoId = rawUrl.removePrefix("youtube://")
-            try {
-                val streamUrl = MusicApplication.instance.audioSourceManager.resolveYouTubeStream(videoId)
-                if (!streamUrl.isNullOrEmpty() && streamUrl.startsWith("http")) {
-                    resolvedUrlCache[song.id] = streamUrl
-                    return@withContext streamUrl
-                }
-            } catch (e: Exception) {
-                AppLogger.w(tag, "YouTube stream resolve failed for $videoId", e)
-            }
+    fun seekTo(positionMs: Long) {
+        exoPlayer.seekTo(positionMs)
+        _playerState.update { it.copy(currentPositionMs = positionMs) }
+    }
 
-            // Fallback: search Kuwo by title if YouTube stream fails
-            val fallbackUrl = KuwoAudioHelper.getPlayableUrl(song.title, song.artist)
-            if (!fallbackUrl.isNullOrEmpty()) {
-                AppLogger.i(tag, "Fallback from YouTube to Kuwo search stream for 《${song.title}》")
-                resolvedUrlCache[song.id] = fallbackUrl
-                return@withContext fallbackUrl
-            }
-            return@withContext null
+    fun skipNext() {
+        val state = _playerState.value
+        if (state.playlist.isEmpty()) return
+        autoSkipJob?.cancel()
+        val from = state.currentIndex
+        // In repeat-one, "next" is the following song (not this one again), as before.
+        val next = if (exoPlayer.repeatMode == Player.REPEAT_MODE_ONE) {
+            (from + 1) % state.playlist.size
+        } else {
+            exoPlayer.nextMediaItemIndex.takeIf { it >= 0 } ?: ((from + 1) % state.playlist.size)
         }
+        playAtIndex(next)
+    }
 
-        // 1. Kuwo protocol (kuwo://$rid)
-        if (rawUrl.startsWith("kuwo://")) {
-            val rid = rawUrl.removePrefix("kuwo://")
-            val convertUrl = "http://antiserver.kuwo.cn/anti.s?type=convert_url&rid=$rid&format=mp3&response=url"
-            try {
-                val req = Request.Builder().url(convertUrl).build()
-                redirectResolverClient.newCall(req).awaitResponse().use { resp ->
-                    val streamUrl = resp.body?.string()?.trim()
-                    if (!streamUrl.isNullOrEmpty() && streamUrl.startsWith("http")) {
-                        if (KuwoAudioHelper.isKuwoPromoAudio(streamUrl)) {
-                            AppLogger.w(tag, "Kuwo stream for rid $rid is copyright promo audio (588957081.mp3), ignoring")
-                        } else {
-                            resolvedUrlCache[song.id] = streamUrl
-                            return@withContext streamUrl
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                AppLogger.w(tag, "Kuwo convert error for rid $rid", e)
-            }
-
-            // Fallback: search Kuwo by title if direct rid fails
-            val fallbackUrl = KuwoAudioHelper.getPlayableUrl(song.title, song.artist)
-            if (!fallbackUrl.isNullOrEmpty()) {
-                AppLogger.i(tag, "Fallback to Kuwo search stream for 《${song.title}》")
-                resolvedUrlCache[song.id] = fallbackUrl
-                return@withContext fallbackUrl
-            }
-            return@withContext null
+    fun skipPrevious() {
+        val state = _playerState.value
+        if (state.playlist.isEmpty()) return
+        autoSkipJob?.cancel()
+        if (exoPlayer.currentPosition > PREVIOUS_RESTART_MS) {
+            seekTo(0L)
+            return
         }
-
-        // 2. Netease outer URL
-        if (rawUrl.contains("music.163.com/song/media/outer/url")) {
-            try {
-                val req = Request.Builder()
-                    .url(rawUrl)
-                    .header("User-Agent", "Mozilla/5.0")
-                    .build()
-
-                redirectResolverClient.newCall(req).awaitResponse().use { resp ->
-                    val location = resp.header("Location")
-                    if (!location.isNullOrEmpty()) {
-                        // Check if Netease redirected to 404 (VIP or copyrighted)
-                        if (!location.contains("/404") && !location.contains("404.html")) {
-                            val target = location.replace("http://", "https://")
-                            resolvedUrlCache[song.id] = target
-                            return@withContext target
-                        } else {
-                            AppLogger.w(tag, "Song 《${song.title}》 redirected to 404 on Netease, cascading to Kuwo fallback...")
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                AppLogger.w(tag, "Failed to resolve redirect for $rawUrl", e)
-            }
-
-            // Fallback to Kuwo for 404 songs!
-            val fallbackUrl = KuwoAudioHelper.getPlayableUrl(song.title, song.artist)
-            if (!fallbackUrl.isNullOrEmpty()) {
-                AppLogger.i(tag, "Recovered 《${song.title}》 via Kuwo fallback stream")
-                resolvedUrlCache[song.id] = fallbackUrl
-                return@withContext fallbackUrl
-            }
-
-            return@withContext null
+        val from = state.currentIndex
+        val previous = if (exoPlayer.repeatMode == Player.REPEAT_MODE_ONE) {
+            if (from <= 0) state.playlist.lastIndex else from - 1
+        } else {
+            exoPlayer.previousMediaItemIndex.takeIf { it >= 0 }
+                ?: (if (from <= 0) state.playlist.lastIndex else from - 1)
         }
+        playAtIndex(previous)
+    }
 
-        resolvedUrlCache[song.id] = rawUrl
-        return@withContext rawUrl
+    fun togglePlaybackMode() {
+        val next = _playerState.value.playbackMode.next()
+        _playerState.update { it.copy(playbackMode = next) }
+        applyPlaybackMode(next)
+        AppLogger.i(tag, "Playback mode: ${next.name}")
     }
 
     // ==================== Playlist Queue Management ====================
@@ -460,24 +622,11 @@ class MusicPlayerManager(private val context: Context) {
         }
 
         val newPlaylist = state.playlist.toMutableList()
-        // Remove existing instance if already in playlist
-        val existingIndex = newPlaylist.indexOfFirst { it.id == song.id }
-        if (existingIndex != -1) {
-            newPlaylist.removeAt(existingIndex)
-        }
-
-        // Calculate insertion point (right after current index)
+        newPlaylist.indexOfFirst { it.id == song.id }.takeIf { it != -1 }?.let { newPlaylist.removeAt(it) }
         val currentIdx = newPlaylist.indexOfFirst { it.id == state.currentSong.id }
         val insertPos = if (currentIdx != -1) currentIdx + 1 else newPlaylist.size
         newPlaylist.add(insertPos, song)
-
-        val updatedCurrentIndex = newPlaylist.indexOfFirst { it.id == state.currentSong.id }
-        _playerState.update {
-            it.copy(
-                playlist = newPlaylist,
-                currentIndex = if (updatedCurrentIndex != -1) updatedCurrentIndex else it.currentIndex
-            )
-        }
+        commitPlaylist(newPlaylist)
         AppLogger.i(tag, "Queued 《${song.title}》 to play next")
     }
 
@@ -487,16 +636,12 @@ class MusicPlayerManager(private val context: Context) {
             playSong(song, listOf(song))
             return
         }
-
-        val newPlaylist = state.playlist.toMutableList()
-        // If not already in playlist, append to end
-        if (!newPlaylist.any { it.id == song.id }) {
-            newPlaylist.add(song)
-            _playerState.update { it.copy(playlist = newPlaylist) }
-            AppLogger.i(tag, "Added 《${song.title}》 to end of playlist")
-        } else {
+        if (state.playlist.any { it.id == song.id }) {
             AppLogger.d(tag, "《${song.title}》 already in playlist")
+            return
         }
+        commitPlaylist(state.playlist + song)
+        AppLogger.i(tag, "Added 《${song.title}》 to end of playlist")
     }
 
     fun removeFromPlaylist(songId: String) {
@@ -504,46 +649,29 @@ class MusicPlayerManager(private val context: Context) {
         val existingIndex = state.playlist.indexOfFirst { it.id == songId }
         if (existingIndex == -1) return
 
-        if (songId == state.currentSong?.id) {
-            if (state.playlist.size <= 1) {
-                try {
-                    exoPlayer.stop()
-                    exoPlayer.clearMediaItems()
-                } catch (_: Exception) {}
-                _playerState.update {
-                    it.copy(
-                        currentSong = null,
-                        playlist = emptyList(),
-                        currentIndex = 0,
-                        isPlaying = false,
-                        isBuffering = false,
-                        currentPositionMs = 0L,
-                        durationMs = 0L,
-                        playerError = null
-                    )
-                }
-                AppLogger.i(tag, "Removed only song from playlist, playback stopped")
-                return
-            }
-
-            val nextIndex = (existingIndex + 1) % state.playlist.size
-            val nextSong = state.playlist[nextIndex]
-            val newPlaylist = state.playlist.toMutableList()
-            newPlaylist.removeAt(existingIndex)
-            playSong(nextSong, newPlaylist)
-            AppLogger.i(tag, "Removed currently playing song $songId, advanced to 《${nextSong.title}》")
-        } else {
-            val newPlaylist = state.playlist.toMutableList()
-            newPlaylist.removeAt(existingIndex)
-            val updatedCurrentIndex = newPlaylist.indexOfFirst { it.id == state.currentSong?.id }
-            _playerState.update {
-                it.copy(
-                    playlist = newPlaylist,
-                    currentIndex = if (updatedCurrentIndex != -1) updatedCurrentIndex else 0
-                )
-            }
+        if (songId != state.currentSong?.id) {
+            commitPlaylist(state.playlist.toMutableList().apply { removeAt(existingIndex) })
             AppLogger.i(tag, "Removed song $songId from playlist")
+            return
         }
+        if (state.playlist.size <= 1) {
+            stopAndClearQueue()
+            AppLogger.i(tag, "Removed only song from playlist, playback stopped")
+            return
+        }
+
+        val wasPlaying = state.isPlaying || exoPlayer.playWhenReady
+        val newPlaylist = state.playlist.toMutableList().apply { removeAt(existingIndex) }
+        val nextIndex = existingIndex.coerceAtMost(newPlaylist.lastIndex)
+        commitPlaylist(newPlaylist)
+        // The song that took the removed slot becomes current; make sure it actually starts.
+        placeholderRejectedFor = null
+        editQueue(newPlaylist.map { it.id }) {
+            exoPlayer.seekTo(nextIndex, 0L)
+            if (exoPlayer.playbackState == Player.STATE_IDLE) exoPlayer.prepare()
+            if (wasPlaying) exoPlayer.play()
+        }
+        AppLogger.i(tag, "Removed currently playing song $songId, advanced to 《${newPlaylist[nextIndex].title}》")
     }
 
     fun reorderPlaylist(fromIndex: Int, toIndex: Int) {
@@ -553,34 +681,12 @@ class MusicPlayerManager(private val context: Context) {
         val newPlaylist = state.playlist.toMutableList()
         val movedItem = newPlaylist.removeAt(fromIndex)
         newPlaylist.add(toIndex, movedItem)
-
-        val updatedCurrentIndex = newPlaylist.indexOfFirst { it.id == state.currentSong?.id }
-        _playerState.update {
-            it.copy(
-                playlist = newPlaylist,
-                currentIndex = if (updatedCurrentIndex != -1) updatedCurrentIndex else it.currentIndex
-            )
-        }
+        commitPlaylist(newPlaylist)
         AppLogger.d(tag, "Reordered playlist: moved from $fromIndex to $toIndex")
     }
 
     fun clearPlaylist() {
-        try {
-            exoPlayer.stop()
-            exoPlayer.clearMediaItems()
-        } catch (_: Exception) {}
-        _playerState.update {
-            it.copy(
-                currentSong = null,
-                playlist = emptyList(),
-                currentIndex = 0,
-                isPlaying = false,
-                isBuffering = false,
-                currentPositionMs = 0L,
-                durationMs = 0L,
-                playerError = null
-            )
-        }
+        stopAndClearQueue()
         AppLogger.i(tag, "Cleared playlist queue")
     }
 
@@ -590,99 +696,17 @@ class MusicPlayerManager(private val context: Context) {
             playSong(song, listOf(song))
             return
         }
+        if (state.playlist.any { it.id == song.id }) return
         val newPlaylist = state.playlist.toMutableList()
         val safeIndex = index.coerceIn(0, newPlaylist.size)
-        if (!newPlaylist.any { it.id == song.id }) {
-            newPlaylist.add(safeIndex, song)
-            val updatedCurrentIndex = newPlaylist.indexOfFirst { it.id == state.currentSong?.id }
-            _playerState.update {
-                it.copy(
-                    playlist = newPlaylist,
-                    currentIndex = if (updatedCurrentIndex != -1) updatedCurrentIndex else it.currentIndex
-                )
-            }
-            AppLogger.i(tag, "Restored 《${song.title}》 to playlist at index $safeIndex")
-        }
-    }
-
-    fun togglePlayPause() {
-        if (exoPlayer.isPlaying) {
-            exoPlayer.pause()
-        } else {
-            if (exoPlayer.playbackState == Player.STATE_IDLE && _playerState.value.currentSong != null) {
-                _playerState.value.currentSong?.let { playSong(it, _playerState.value.playlist) }
-            } else {
-                exoPlayer.play()
-            }
-        }
-    }
-
-    fun seekTo(positionMs: Long) {
-        exoPlayer.seekTo(positionMs)
-        _playerState.update { it.copy(currentPositionMs = positionMs) }
-    }
-
-    fun skipNext() {
-        val state = _playerState.value
-        if (state.playlist.isEmpty()) return
-
-        val nextIndex = when (state.playbackMode) {
-            PlaybackMode.SHUFFLE -> {
-                if (state.playlist.size == 1) 0
-                else {
-                    var rand = (state.playlist.indices).random()
-                    if (rand == state.currentIndex && state.playlist.size > 1) {
-                        rand = (rand + 1) % state.playlist.size
-                    }
-                    rand
-                }
-            }
-            else -> (state.currentIndex + 1) % state.playlist.size
-        }
-
-        val nextSong = state.playlist[nextIndex]
-        playSong(nextSong, state.playlist)
-    }
-
-    fun skipPrevious() {
-        val state = _playerState.value
-        if (state.playlist.isEmpty()) return
-
-        if (exoPlayer.currentPosition > 3000) {
-            seekTo(0)
-            return
-        }
-
-        val prevIndex = if (state.currentIndex <= 0) {
-            state.playlist.size - 1
-        } else {
-            state.currentIndex - 1
-        }
-
-        val prevSong = state.playlist[prevIndex]
-        playSong(prevSong, state.playlist)
-    }
-
-    fun togglePlaybackMode() {
-        _playerState.update { it.copy(playbackMode = it.playbackMode.next()) }
-    }
-
-    private fun handlePlaybackEnded() {
-        val state = _playerState.value
-        when (state.playbackMode) {
-            PlaybackMode.REPEAT_ONE -> {
-                seekTo(0)
-                exoPlayer.play()
-            }
-            PlaybackMode.REPEAT_ALL, PlaybackMode.SHUFFLE -> {
-                skipNext()
-            }
-        }
+        newPlaylist.add(safeIndex, song)
+        commitPlaylist(newPlaylist)
+        AppLogger.i(tag, "Restored 《${song.title}》 to playlist at index $safeIndex")
     }
 
     fun release() {
         stopProgressTracker()
-        prepareJob?.cancel()
+        autoSkipJob?.cancel()
         exoPlayer.removeListener(playerListener)
         exoPlayer.release()
     }

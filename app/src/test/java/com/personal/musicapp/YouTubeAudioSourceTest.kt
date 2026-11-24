@@ -8,6 +8,7 @@ import okhttp3.Request
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
+import org.junit.Ignore
 import org.junit.Test
 
 class YouTubeAudioSourceTest {
@@ -21,6 +22,7 @@ class YouTubeAudioSourceTest {
         assertFalse(yt.canHandleLink("https://v.douyin.com/abc/"))
     }
 
+    @Ignore("live network，见 docs/VERIFICATION.md")
     @Test
     fun testParseShareLink() = runBlocking {
         val yt = YouTubeAudioSource()
@@ -30,6 +32,7 @@ class YouTubeAudioSourceTest {
         assertTrue("Song title should not be blank", song.title.isNotBlank())
     }
 
+    @Ignore("live network，见 docs/VERIFICATION.md")
     @Test
     fun testYouTubeSearch() = runBlocking {
         val yt = YouTubeAudioSource()
@@ -46,6 +49,7 @@ class YouTubeAudioSourceTest {
         assertTrue("CoverUrl must be valid", first.coverUrl.startsWith("http"))
     }
 
+    @Ignore("live network，见 docs/VERIFICATION.md")
     @Test
     fun testYouTubeStreamResolution() = runBlocking {
         val yt = YouTubeAudioSource()
@@ -74,6 +78,7 @@ class YouTubeAudioSourceTest {
         }
     }
 
+    @Ignore("live network，见 docs/VERIFICATION.md")
     @Test
     fun testAggregatedSearchContainsYouTube() = runBlocking {
         val manager = AudioSourceManager()

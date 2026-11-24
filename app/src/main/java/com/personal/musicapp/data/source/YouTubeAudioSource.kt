@@ -4,35 +4,46 @@ import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import com.personal.musicapp.data.model.Song
+import com.personal.musicapp.util.AppLogger
+import com.personal.musicapp.util.awaitResponse
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.security.MessageDigest
-import java.util.concurrent.TimeUnit
 import java.util.regex.Pattern
+
+/** Outcome of one InnerTube player call. `url` is set only on a real free stream. */
+data class YtResolveResult(
+    val url: String?,
+    val httpCode: Int = 0,
+    val status: SourceStatus = SourceStatus.ERROR,
+    val detail: String? = null
+)
 
 class YouTubeAudioSource(
     private val cookieProvider: () -> String? = { null }
 ) : AudioSource {
 
     companion object {
-        const val SAFARI_USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15"
+        const val SAFARI_USER_AGENT = HttpPolicy.YOUTUBE_USER_AGENT
+        private const val TAG = "YouTube"
+        private const val VISITOR_DATA_NEGATIVE_CACHE_MS = 10 * 60 * 1000L
     }
 
-    override val sourceName: String = "YouTube"
+    override val sourceName: String = HttpPolicy.YOUTUBE
 
     @Volatile
     private var cachedVisitorData: String? = null
 
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS)
-        .followRedirects(true)
-        .followSslRedirects(true)
-        .build()
+    @Volatile
+    private var visitorDataFailedAt: Long? = null
+
+    private val searchClient by lazy { HttpPolicy.searchClient(sourceName) }
+    private val bootstrapClient by lazy { HttpPolicy.resolveClient(HttpPolicy.YOUTUBE_BOOTSTRAP_MS) }
+    private val playerClient by lazy { HttpPolicy.playerClient() }
 
     private val youtubeUrlPattern = Pattern.compile(
         "(?:https?://)?(?:www\\.|music\\.)?(?:youtube\\.com/(?:watch\\?(?:.*&)?v=|shorts/|embed/)|youtu\\.be/)([a-zA-Z0-9_-]{11})"
@@ -77,7 +88,9 @@ class YouTubeAudioSource(
         }
     }
 
-    override suspend fun search(query: String): List<Song> = withContext(Dispatchers.IO) {
+    override suspend fun search(query: String): List<Song> = search(query, HttpReporter())
+
+    override suspend fun search(query: String, reporter: HttpReporter): List<Song> = withContext(Dispatchers.IO) {
         val trimmed = query.trim()
         if (trimmed.isEmpty()) return@withContext emptyList()
 
@@ -99,6 +112,7 @@ class YouTubeAudioSource(
                 addProperty("query", trimmed)
             }
 
+            reporter.url = "music.youtube.com/youtubei/v1/search"
             val reqBuilder = Request.Builder()
                 .url("https://music.youtube.com/youtubei/v1/search")
                 .header("Content-Type", "application/json")
@@ -107,17 +121,18 @@ class YouTubeAudioSource(
 
             applyAuthHeaders(reqBuilder, "https://music.youtube.com")
 
-            client.newCall(reqBuilder.build()).execute().use { resp ->
-                if (!resp.isSuccessful) return@withContext emptyList()
-                val bodyStr = resp.body?.string() ?: return@withContext emptyList()
+            searchClient.newCall(reqBuilder.build()).awaitResponse().use { resp ->
+                reporter.httpCode = resp.code
+                if (!resp.isSuccessful) throw HttpCodeException(resp.code, reporter.url)
+                val bodyStr = resp.body?.string() ?: throw HttpCodeException(resp.code, reporter.url)
                 val root = JsonParser.parseString(bodyStr).asJsonObject
                 root.getAsJsonObject("responseContext")?.get("visitorData")?.asString?.let {
                     if (it.isNotEmpty()) cachedVisitorData = it
                 }
                 return@withContext parseSearchResults(root)
             }
-        } catch (e: Exception) {
-            emptyList()
+        } catch (e: CancellationException) {
+            throw e
         }
     }
 
@@ -294,9 +309,17 @@ class YouTubeAudioSource(
         }
     }
 
+    /**
+     * Visitor data is optional: InnerTube answers without it. So the bootstrap GET gets a
+     * tiny budget and a failure is remembered, instead of stalling every playback.
+     */
     private suspend fun ensureVisitorData(videoId: String? = null): String? = withContext(Dispatchers.IO) {
         val cached = cachedVisitorData
         if (!cached.isNullOrEmpty()) return@withContext cached
+
+        val now = System.currentTimeMillis()
+        val failedAt = visitorDataFailedAt
+        if (failedAt != null && now - failedAt < VISITOR_DATA_NEGATIVE_CACHE_MS) return@withContext null
 
         try {
             val url = if (!videoId.isNullOrEmpty()) {
@@ -309,7 +332,7 @@ class YouTubeAudioSource(
                 .header("User-Agent", SAFARI_USER_AGENT)
                 .header("Cookie", "PREF=hl=en&tz=UTC; SOCS=CAI")
                 .build()
-            client.newCall(req).execute().use { resp ->
+            bootstrapClient.newCall(req).awaitResponse().use { resp ->
                 if (resp.isSuccessful) {
                     val html = resp.body?.string() ?: ""
                     val regex = Regex("\"(?:visitorData|VISITOR_DATA)\":\"([^\"]+)\"")
@@ -317,15 +340,26 @@ class YouTubeAudioSource(
                     val vData = match?.groupValues?.get(1)
                     if (!vData.isNullOrEmpty()) {
                         cachedVisitorData = vData
+                        visitorDataFailedAt = null
                         return@withContext vData
                     }
                 }
+                AppLogger.v(TAG, "[SRC]  yt   visitor-data bootstrap http=${resp.code} status=empty")
             }
-        } catch (_: Exception) {}
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            AppLogger.v(TAG, "[SRC]  yt   visitor-data bootstrap status=${SourceCall.classify(e).name.lowercase().replace('_', '-')} detail=${e.javaClass.simpleName}")
+        }
+        visitorDataFailedAt = now
         return@withContext cachedVisitorData
     }
 
-    suspend fun resolveStreamUrl(videoId: String): String? = withContext(Dispatchers.IO) {
+    suspend fun resolveStreamUrl(videoId: String): String? = resolveStream(videoId).url
+
+    /** Reads `playabilityStatus` first so "copyright-blocked" and "we timed out" stay distinct. */
+    suspend fun resolveStream(videoId: String): YtResolveResult = withContext(Dispatchers.IO) {
+        val reporter = HttpReporter()
         try {
             val visitorData = ensureVisitorData(videoId)
             // Use VISIONOS client: InnerTube delivers non-throttled direct stream URLs without requiring PO tokens
@@ -368,38 +402,61 @@ class YouTubeAudioSource(
                 .header("Origin", "https://www.youtube.com")
                 .post(payload.toString().toRequestBody("application/json".toMediaType()))
 
+            reporter.url = "www.youtube.com/youtubei/v1/player"
             applyAuthHeaders(reqBuilder, "https://www.youtube.com")
 
-            client.newCall(reqBuilder.build()).execute().use { resp ->
-                if (!resp.isSuccessful) return@withContext null
-                val body = resp.body?.string() ?: return@withContext null
+            playerClient.newCall(reqBuilder.build()).awaitResponse().use { resp ->
+                reporter.httpCode = resp.code
+                if (!resp.isSuccessful) {
+                    AppLogger.w(TAG, "[SRC]  yt   id=$videoId http=${resp.code} status=http-error")
+                    return@withContext YtResolveResult(null, resp.code, SourceStatus.HTTP_ERROR)
+                }
+                val body = resp.body?.string() ?: return@withContext YtResolveResult(null, resp.code, SourceStatus.PARSE_ERROR)
                 val root = JsonParser.parseString(body).asJsonObject
 
-                val streamingData = root.getAsJsonObject("streamingData") ?: return@withContext null
-                val adaptiveFormats = streamingData.getAsJsonArray("adaptiveFormats") ?: return@withContext null
+                val playability = root.getAsJsonObject("playabilityStatus")
+                val playabilityStatus = playability?.get("status")?.takeIf { it.isJsonPrimitive }?.asString
+                val reason = playability?.get("reason")?.takeIf { it.isJsonPrimitive }?.asString
 
-                var bestUrl: String? = null
-                var maxBitrate = 0L
+                // Prefer the best adaptive audio; progressive `formats` is the free-tier fallback.
+                val url = pickBestAudioUrl(root, "adaptiveFormats") ?: pickBestAudioUrl(root, "formats")
+                if (url != null) return@withContext YtResolveResult(url, resp.code, SourceStatus.OK)
 
-                for (f in adaptiveFormats) {
-                    val obj = f.asJsonObject
-                    val mime = obj.get("mimeType")?.asString ?: ""
-                    if (!mime.contains("audio")) continue
-                    val url = obj.get("url")?.asString
-                    if (url.isNullOrEmpty()) continue
-
-                    val bitrate = obj.get("bitrate")?.asLong ?: 0L
-                    if (bitrate > maxBitrate) {
-                        maxBitrate = bitrate
-                        bestUrl = url
-                    }
+                if (playabilityStatus != null && playabilityStatus != "OK") {
+                    AppLogger.w(TAG, "[SRC]  yt   id=$videoId http=${resp.code} status=playability-blocked reason=$playabilityStatus")
+                    return@withContext YtResolveResult(null, resp.code, SourceStatus.PLAYABILITY_BLOCKED, reason ?: playabilityStatus)
                 }
-
-                return@withContext bestUrl
+                AppLogger.v(TAG, "[SRC]  yt   id=$videoId http=${resp.code} status=empty field=streamingData")
+                return@withContext YtResolveResult(null, resp.code, SourceStatus.EMPTY, "no audio formats")
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            null
+            val status = SourceCall.classify(e)
+            AppLogger.v(TAG, "[SRC]  yt   id=$videoId http=${reporter.httpCode} status=${status.name.lowercase().replace('_', '-')} detail=${e.javaClass.simpleName}")
+            return@withContext YtResolveResult(null, reporter.httpCode, status, e.javaClass.simpleName)
         }
+    }
+
+    private fun pickBestAudioUrl(root: JsonObject, arrayName: String): String? {
+        val formats = root.getAsJsonObject("streamingData")?.getAsJsonArray(arrayName) ?: return null
+        var bestUrl: String? = null
+        var maxBitrate = 0L
+        for (f in formats) {
+            val obj = f.asJsonObject
+            val mimeEl = obj.get("mimeType")
+            if (mimeEl == null || !mimeEl.isJsonPrimitive || !mimeEl.asString.contains("audio")) continue
+            val urlEl = obj.get("url")
+            if (urlEl == null || !urlEl.isJsonPrimitive) continue
+            val url = urlEl.asString
+            if (url.isEmpty()) continue
+            val bitrate = obj.get("bitrate")?.takeIf { it.isJsonPrimitive }?.asLong ?: 0L
+            if (bitrate > maxBitrate) {
+                maxBitrate = bitrate
+                bestUrl = url
+            }
+        }
+        return bestUrl
     }
 
     private suspend fun fetchSongDetails(videoId: String): Song? = withContext(Dispatchers.IO) {
@@ -446,7 +503,7 @@ class YouTubeAudioSource(
 
             applyAuthHeaders(reqBuilder, "https://www.youtube.com")
 
-            client.newCall(reqBuilder.build()).execute().use { resp ->
+            playerClient.newCall(reqBuilder.build()).awaitResponse().use { resp ->
                 if (!resp.isSuccessful) return@withContext null
                 val body = resp.body?.string() ?: return@withContext null
                 val root = JsonParser.parseString(body).asJsonObject
@@ -467,7 +524,10 @@ class YouTubeAudioSource(
                     source = sourceName
                 )
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
+            AppLogger.v(TAG, "[SRC]  yt   id=$videoId link-parse status=${SourceCall.classify(e).name.lowercase().replace('_', '-')} detail=${e.javaClass.simpleName}")
             null
         }
     }

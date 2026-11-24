@@ -44,6 +44,7 @@ import com.personal.musicapp.ui.screens.DiscoverScreen
 import com.personal.musicapp.ui.screens.FavoritesScreen
 import com.personal.musicapp.util.AppLogger
 import com.personal.musicapp.util.SearchInputUtils
+import com.personal.musicapp.data.source.SourceOutcome
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -82,6 +83,8 @@ fun MainScreen(
     val snackbarHostState = remember { SnackbarHostState() }
 
     var searchSuggestions by remember { mutableStateOf<List<SearchSuggestion>>(emptyList()) }
+    var searchOutcomes by remember { mutableStateOf<List<SourceOutcome>>(emptyList()) }
+    var searchSettled by remember { mutableStateOf(true) }
 
     // Debounced query suggestions (mixing local history & online suggest)
     LaunchedEffect(searchQuery, searchHistory) {
@@ -141,6 +144,8 @@ fun MainScreen(
 
         hasSearched = true
         errorMessage = null
+        searchOutcomes = emptyList()
+        searchSettled = false
         AppLogger.i("MainScreen", "Searching 3-tier weighted (streaming): $query")
 
         searchJob?.cancel()
@@ -167,7 +172,10 @@ fun MainScreen(
 
             try {
                 // Priority 3: Online multi-source search via flow stream
-                sourceManager.searchStream(query).collect { onlineResults ->
+                sourceManager.searchStream(query).collect { batch ->
+                    val onlineResults = batch.songs
+                    searchOutcomes = batch.outcomes
+                    searchSettled = batch.settled
                     val allKnownIds = (localDownloadsMatches.map { it.id } + playHistoryMatches.map { it.id }).toMutableSet()
                     val uniqueOnline = onlineResults.filter { onlineSong ->
                         val isDuplicate = allKnownIds.contains(onlineSong.id) ||
@@ -185,8 +193,14 @@ fun MainScreen(
                 }
 
                 if (searchResults.isEmpty()) {
-                    errorMessage = "未找到与 \"$query\" 相关的音频，请尝试其他关键词"
-                    AppLogger.w("MainScreen", "No search results for: $query")
+                    // Only conclude "nothing exists" once every source actually answered.
+                    val failedSources = searchOutcomes.filter { it.degraded }.map { it.source }.distinct()
+                    errorMessage = if (failedSources.isNotEmpty()) {
+                        "搜索未完成（${failedSources.joinToString("、")}未返回），结果可能不全，请重试"
+                    } else {
+                        "未找到与 \"$query\" 相关的音频，请尝试其他关键词"
+                    }
+                    AppLogger.w("MainScreen", "No search results for: $query (degraded=${failedSources.joinToString()})")
                 }
             } catch (e: Exception) {
                 isLoading = false
@@ -269,13 +283,14 @@ fun MainScreen(
     LaunchedEffect(playerState.playerError) {
         playerState.playerError?.let { err ->
             snackbarHostState.currentSnackbarData?.dismiss()
+            val retryable = playerState.playbackFailure?.retryable == true
             val result = snackbarHostState.showSnackbar(
                 message = err,
-                actionLabel = "查看日志",
+                actionLabel = if (retryable) "重试" else "查看日志",
                 duration = SnackbarDuration.Short
             )
             if (result == SnackbarResult.ActionPerformed) {
-                showDebugDialog = true
+                if (retryable) playerManager.retryCurrent() else showDebugDialog = true
             }
         }
     }
@@ -334,6 +349,8 @@ fun MainScreen(
                         onSearchQueryChange = { searchQuery = it },
                         onSearch = { performSearch() },
                         searchResults = searchResults,
+                        sourceOutcomes = searchOutcomes,
+                        searchSettled = searchSettled,
                         searchHistory = searchHistory,
                         searchSuggestions = searchSuggestions,
                         onSelectSuggestion = { q ->

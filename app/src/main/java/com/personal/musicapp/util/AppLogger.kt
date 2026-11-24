@@ -66,6 +66,12 @@ object AppLogger {
         addEntry("D", tag, message)
     }
 
+    /** Expected-but-notable events. Never lights the error badge. */
+    fun v(tag: String, message: String) {
+        Log.v(tag, message)
+        addEntry("V", tag, message)
+    }
+
     fun i(tag: String, message: String) {
         Log.i(tag, message)
         addEntry("I", tag, message)

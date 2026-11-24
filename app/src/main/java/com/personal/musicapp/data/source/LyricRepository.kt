@@ -20,7 +20,7 @@ class LyricRepository(private val context: Context) {
     private val tag = "LyricRepository"
     private val memCache = ConcurrentHashMap<String, List<LyricEntry>>()
 
-    private val client = OkHttpClient.Builder()
+    private val client = HttpPolicy.shared.newBuilder()
         .connectTimeout(5, TimeUnit.SECONDS)
         .readTimeout(5, TimeUnit.SECONDS)
         .build()

@@ -1,132 +1,167 @@
 package com.personal.musicapp.data.source
 
+import com.google.gson.JsonElement
+import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import com.personal.musicapp.data.model.Song
+import com.personal.musicapp.util.AppLogger
+import com.personal.musicapp.util.awaitResponse
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.net.URLEncoder
-import java.util.concurrent.TimeUnit
 
 class NetMusicAudioSource : AudioSource {
 
-    override val sourceName: String = "网易云"
+    companion object {
+        private const val TAG = "Netease"
+        private const val SEARCH_URL = "https://music.163.com/api/search/get/web?s=%s&type=1&offset=0&total=true&limit=%d"
+        private const val COVER_URL = "https://music.163.com/api/song/detail/?ids=%s"
 
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(12, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS)
-        .build()
+        /** Covers are decorative: only fetched when this much of the search budget is left. */
+        private const val COVER_MIN_REMAINING_MS = 1500L
+
+        fun outerUrl(id: Long): String = "https://music.163.com/song/media/outer/url?id=$id.mp3"
+
+        private fun headers() = mapOf(
+            "User-Agent" to HttpPolicy.DESKTOP_UA,
+            "Referer" to "https://music.163.com/"
+        )
+    }
+
+    override val sourceName: String = HttpPolicy.NETEASE
+
+    private val client by lazy { HttpPolicy.searchClient(sourceName) }
+    private val coverClient by lazy { HttpPolicy.coverClient() }
 
     override fun canHandleLink(text: String): Boolean = false
 
     override suspend fun parseShareLink(text: String): Song? = null
 
-    override suspend fun search(query: String): List<Song> = withContext(Dispatchers.IO) {
-        val trimmed = query.trim()
-        if (trimmed.isEmpty()) return@withContext emptyList()
+    override suspend fun search(query: String): List<Song> = search(query, HttpReporter())
 
-        val results = mutableListOf<Song>()
-        try {
-            val encodedQuery = URLEncoder.encode(trimmed, "UTF-8")
-            val searchUrl = "https://music.163.com/api/search/get/web?s=$encodedQuery&type=1&offset=0&total=true&limit=30"
+    override suspend fun search(query: String, reporter: HttpReporter): List<Song> =
+        withContext(Dispatchers.IO) { runSearch(query, reporter, withCovers = true) }
 
-            val req = Request.Builder()
-                .url(searchUrl)
-                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-                .header("Referer", "https://music.163.com/")
-                .build()
-
-            val songIds = mutableListOf<Long>()
-            val rawSongs = mutableListOf<Triple<Long, String, Pair<String, Long>>>() // id, name, (artist, duration)
-
-            client.newCall(req).execute().use { resp ->
-                if (!resp.isSuccessful) return@withContext emptyList()
-                val body = resp.body?.string() ?: return@withContext emptyList()
-
-                val root = JsonParser.parseString(body).asJsonObject
-                val resultObj = root.getAsJsonObject("result") ?: return@withContext emptyList()
-                val songsArray = resultObj.getAsJsonArray("songs") ?: return@withContext emptyList()
-
-                for (item in songsArray) {
-                    val songObj = item.asJsonObject
-                    val id = songObj.get("id")?.asLong ?: continue
-                    val name = songObj.get("name")?.asString ?: "未知歌曲"
-                    val duration = songObj.get("duration")?.asLong ?: 0L
-
-                    var artistName = "群星"
-                    val artistsArray = songObj.getAsJsonArray("artists")
-                    if (artistsArray != null && artistsArray.size() > 0) {
-                        val artistObj = artistsArray[0].asJsonObject
-                        artistName = artistObj.get("name")?.asString ?: "群星"
-                    }
-
-                    songIds.add(id)
-                    rawSongs.add(Triple(id, name, Pair(artistName, duration)))
-                }
-            }
-
-            // Batch query covers from song detail API
-            val coverMap = fetchCoversForSongIds(songIds)
-
-            for ((id, name, artistAndDuration) in rawSongs) {
-                val (artist, duration) = artistAndDuration
-                val cover = coverMap[id] ?: ""
-                val audioUrl = "https://music.163.com/song/media/outer/url?id=$id.mp3"
-
-                results.add(
-                    Song(
-                        id = "net_$id",
-                        title = name,
-                        artist = artist,
-                        coverUrl = cover,
-                        audioUrl = audioUrl,
-                        durationMs = duration,
-                        source = sourceName
-                    )
-                )
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
+    /** Exact title (+artist) lookup used when another source has the song but no free stream. */
+    suspend fun findByTitle(title: String, artist: String): Song? {
+        val wanted = title.trim()
+        val reporter = HttpReporter()
+        val candidates = runSearch("$wanted ${artist.trim()}", reporter, withCovers = false)
+            .ifEmpty { runSearch(wanted, reporter, withCovers = false) }
+        val artistMatch = artist.isNotBlank() && artist != "群星" && artist != "未知歌曲"
+        return candidates.firstOrNull { song ->
+            song.title.equals(wanted, ignoreCase = true) &&
+                (!artistMatch || song.artist.split("/", "、", ",", "&").first().trim().equals(artist.trim(), ignoreCase = true))
         }
-
-        return@withContext results
     }
 
-    private fun fetchCoversForSongIds(songIds: List<Long>): Map<Long, String> {
-        if (songIds.isEmpty()) return emptyMap()
-        val covers = mutableMapOf<Long, String>()
+    private suspend fun runSearch(query: String, reporter: HttpReporter, withCovers: Boolean): List<Song> {
+        val trimmed = query.trim()
+        if (trimmed.isEmpty()) return emptyList()
+        val started = System.nanoTime()
+
+        reporter.url = "music.163.com/api/search/get/web"
+        val req = Request.Builder()
+            .url(SEARCH_URL.format(URLEncoder.encode(trimmed, "UTF-8"), 30))
+            .apply { headers().forEach { (k, v) -> header(k, v) } }
+            .build()
+
+        val results = ArrayList<Song>()
+        client.newCall(req).awaitResponse().use { resp ->
+            reporter.httpCode = resp.code
+            if (!resp.isSuccessful) throw HttpCodeException(resp.code, reporter.url)
+            val body = resp.body?.string() ?: throw HttpCodeException(resp.code, reporter.url)
+            results.addAll(parseSearchBody(body, reporter))
+        }
+
+        // Results are complete here; a cover failure can only cost covers.
+        if (!withCovers || results.isEmpty()) return results
+        val elapsedMs = (System.nanoTime() - started) / 1_000_000
+        if (searchDeadlineMs - elapsedMs <= COVER_MIN_REMAINING_MS) return results
+        val ids = results.mapNotNull { it.id.removePrefix("net_").toLongOrNull() }
+        return applyCovers(results, fetchCovers(ids))
+    }
+
+    internal fun parseSearchBody(body: String, reporter: HttpReporter): List<Song> {
+        val root = JsonParser.parseString(body).asJsonObject
+        val resultObj = root.get("result")?.takeIf { it.isJsonObject }?.asJsonObject
+            ?: run { reporter.detail = "field=result"; return emptyList() }
+        val songsArray = resultObj.get("songs")?.takeIf { it.isJsonArray }?.asJsonArray
+            ?: run { reporter.detail = "field=result.songs"; return emptyList() }
+
+        val results = ArrayList<Song>()
+        for (item in songsArray) {
+            val songObj = item.asJsonObject
+            val id = songObj.get("id")?.takeIf { it.isJsonPrimitive }?.asLong ?: continue
+            val name = songObj.get("name")?.takeIf { it.isJsonPrimitive }?.asString ?: "未知歌曲"
+            val duration = songObj.get("duration")?.takeIf { it.isJsonPrimitive }?.asLong ?: 0L
+
+            var artistName = "群星"
+            val artistsArray = songObj.get("artists")?.takeIf { it.isJsonArray }?.asJsonArray
+            if (artistsArray != null && artistsArray.size() > 0) {
+                artistName = artistsArray[0].asJsonObject.get("name")?.takeIf { it.isJsonPrimitive }?.asString ?: "群星"
+            }
+            val picUrl = songObj.get("album")?.takeIf { it.isJsonObject }?.asJsonObject
+                ?.get("picUrl")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty()
+                .replace("http://", "https://")
+
+            results.add(
+                Song(
+                    id = "net_$id",
+                    title = name,
+                    artist = artistName,
+                    coverUrl = if (picUrl.isEmpty()) "" else "$picUrl?param=400y400",
+                    audioUrl = outerUrl(id),
+                    durationMs = duration,
+                    source = sourceName
+                )
+            )
+        }
+        return results
+    }
+
+    /** Returns a new list; songs without a fetched cover keep their own row unchanged. */
+    internal fun applyCovers(results: List<Song>, covers: Map<Long, String>): List<Song> {
+        if (covers.isEmpty()) return results
+        return results.map { song ->
+            val cover = covers[song.id.removePrefix("net_").toLongOrNull()] ?: return@map song
+            song.copy(coverUrl = cover)
+        }
+    }
+
+    private suspend fun fetchCovers(ids: List<Long>): Map<Long, String> {
+        if (ids.isEmpty()) return emptyMap()
         try {
-            val idsParam = songIds.joinToString(prefix = "[", postfix = "]", separator = ",")
-            val detailUrl = "https://music.163.com/api/song/detail/?ids=$idsParam"
-
+            val idsParam = ids.joinToString(prefix = "[", postfix = "]", separator = ",")
             val req = Request.Builder()
-                .url(detailUrl)
-                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-                .header("Referer", "https://music.163.com/")
+                .url(COVER_URL.format(idsParam))
+                .apply { headers().forEach { (k, v) -> header(k, v) } }
                 .build()
-
-            client.newCall(req).execute().use { resp ->
-                if (!resp.isSuccessful) return covers
-                val body = resp.body?.string() ?: return covers
-                val root = JsonParser.parseString(body).asJsonObject
-                val songsArray = root.getAsJsonArray("songs") ?: return covers
-
+            coverClient.newCall(req).awaitResponse().use { resp ->
+                if (!resp.isSuccessful) return emptyMap()
+                val root = JsonParser.parseString(resp.body?.string() ?: return emptyMap()).asJsonObject
+                val songsArray = root.get("songs")?.takeIf { it.isJsonArray }?.asJsonArray ?: return emptyMap()
+                val covers = HashMap<Long, String>()
                 for (item in songsArray) {
                     val sObj = item.asJsonObject
-                    val id = sObj.get("id")?.asLong ?: continue
-                    val albumObj = sObj.getAsJsonObject("album")
-                    val picUrl = albumObj?.get("picUrl")?.asString
+                    val el: JsonElement = sObj.get("id") ?: continue
+                    if (!el.isJsonPrimitive) continue
+                    val id = el.asLong
+                    val picUrl = sObj.get("album")?.takeIf { it.isJsonObject }?.asJsonObject
+                        ?.get("picUrl")?.takeIf { it.isJsonPrimitive }?.asString
                     if (!picUrl.isNullOrEmpty()) {
-                        // Upgrade to https and resize to 400x400 for crisp native display
-                        val securePicUrl = picUrl.replace("http://", "https://") + "?param=400y400"
-                        covers[id] = securePicUrl
+                        covers[id] = picUrl.replace("http://", "https://") + "?param=400y400"
                     }
                 }
+                return covers
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            e.printStackTrace()
+            AppLogger.v(TAG, "[SRC]  net  cover-fetch status=${SourceCall.classify(e).name.lowercase().replace('_', '-')} detail=${e.javaClass.simpleName}")
+            return emptyMap()
         }
-        return covers
     }
 }

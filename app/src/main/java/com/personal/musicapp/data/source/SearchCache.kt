@@ -1,15 +1,24 @@
 package com.personal.musicapp.data.source
 
 import com.personal.musicapp.data.model.Song
-import java.util.LinkedHashMap
 
+/**
+ * Two TTLs: a complete snapshot is authoritative for [ttlMs], a degraded one only for
+ * [partialTtlMs] so a dead network is not replayed as "this catalogue has nothing".
+ */
 class SearchCache(
     private val maxSize: Int = 50,
-    private val ttlMs: Long = 10 * 60 * 1000L // 10 minutes TTL
+    private val ttlMs: Long = 10 * 60 * 1000L,
+    private val partialTtlMs: Long = 20 * 1000L,
+    private val timeProvider: () -> Long = System::currentTimeMillis
 ) {
+
+    data class CacheHit(val songs: List<Song>, val complete: Boolean)
+
     private data class CacheEntry(
         val songs: List<Song>,
-        val timestamp: Long
+        val timestamp: Long,
+        val complete: Boolean
     )
 
     private val lock = Any()
@@ -19,24 +28,36 @@ class SearchCache(
         }
     }
 
-    fun get(query: String): List<Song>? {
+    private fun ttlFor(entry: CacheEntry): Long = if (entry.complete) ttlMs else partialTtlMs
+
+    fun getHit(query: String): CacheHit? {
         val key = query.trim().lowercase()
         if (key.isEmpty()) return null
         synchronized(lock) {
             val entry = cache[key] ?: return null
-            if (System.currentTimeMillis() - entry.timestamp > ttlMs) {
+            if (timeProvider() - entry.timestamp > ttlFor(entry)) {
                 cache.remove(key)
                 return null
             }
-            return entry.songs
+            return CacheHit(entry.songs, entry.complete)
         }
     }
 
-    fun put(query: String, songs: List<Song>) {
+    fun get(query: String): List<Song>? = getHit(query)?.songs
+
+    fun put(query: String, songs: List<Song>, complete: Boolean = true) {
         val key = query.trim().lowercase()
         if (key.isEmpty() || songs.isEmpty()) return
         synchronized(lock) {
-            cache[key] = CacheEntry(songs, System.currentTimeMillis())
+            cache[key] = CacheEntry(songs, timeProvider(), complete)
+        }
+    }
+
+    fun remove(query: String) {
+        val key = query.trim().lowercase()
+        if (key.isEmpty()) return
+        synchronized(lock) {
+            cache.remove(key)
         }
     }
 

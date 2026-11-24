@@ -14,7 +14,7 @@ echo -e "${CYAN}   原生音乐播放器 - 实时真机调试日志${RESET}"
 echo -e "${CYAN}========================================${RESET}"
 echo -e "${YELLOW}正在监听手机日志 (按 Ctrl+C 停止)...${RESET}\n"
 
-FILTER='com.personal.musicapp|MusicApp|MusicPlayerManager|PlaybackService|MainScreen|Kuwo|ExoPlayer|MediaSession|Douyin|NetMusic'
+FILTER='com.personal.musicapp|MusicApp|MusicPlayerManager|PlaybackService|MainScreen|Kuwo|Netease|ExoPlayer|MediaSession|Douyin|NetMusic|YouTube|SourceDiag|StreamResolver|SearchCache|LocalMusicRepository|\[SRC\]|\[SRCH\]|\[RESL\]|\[REJ'
 ERR_RE=' E/|Error|Exception|FAIL'
 WARN_RE=' W/|Warn'
 

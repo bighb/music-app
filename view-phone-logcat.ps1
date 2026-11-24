@@ -11,7 +11,7 @@ Write-Host "正在监听手机日志 (按 Ctrl+C 停止)...`n" -ForegroundColor 
 
 & $adbPath logcat -c
 & $adbPath logcat -v time | ForEach-Object {
-    if ($_ -match "com.personal.musicapp|MusicApp|ExoPlayer|MediaSession|Douyin|NetMusic") {
+    if ($_ -match "com.personal.musicapp|MusicApp|ExoPlayer|MediaSession|Douyin|NetMusic|YouTube|Netease|SourceDiag|StreamResolver|SearchCache|LocalMusicRepository|\[SRC\]|\[SRCH\]|\[RESL\]|\[REJ") {
         if ($_ -match " E/|Error|Exception|FAIL") {
             Write-Host $_ -ForegroundColor Red
         } elseif ($_ -match " W/|Warn") {

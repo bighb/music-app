@@ -5,8 +5,10 @@ import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.personal.musicapp.MusicApplication
 import com.personal.musicapp.data.model.Song
-import com.personal.musicapp.data.source.KuwoAudioHelper
-import com.personal.musicapp.data.source.YouTubeAudioSource
+import com.personal.musicapp.data.source.AudioFileVerifier
+import com.personal.musicapp.data.source.FailureKind
+import com.personal.musicapp.data.source.HttpPolicy
+import com.personal.musicapp.data.source.SourceDiagnostics
 import com.personal.musicapp.util.AppLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -34,7 +36,7 @@ class LocalMusicRepository(private val context: Context) {
     private val tag = "LocalMusicRepository"
     private val gson = Gson()
     private val scope = CoroutineScope(Dispatchers.IO)
-    private val client = OkHttpClient.Builder()
+    private val client = HttpPolicy.shared.newBuilder()
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .build()
@@ -85,7 +87,7 @@ class LocalMusicRepository(private val context: Context) {
                 var audioPath = song.localAudioPath
                 if (audioPath != null) {
                     val f = File(audioPath)
-                    if (!f.exists() || f.length() < 10000) {
+                    if (!AudioFileVerifier.isPlausible(f, song.durationMs)) {
                         if (f.exists()) f.delete()
                         audioPath = null
                     }
@@ -176,7 +178,7 @@ class LocalMusicRepository(private val context: Context) {
                 val audioPath = song.localAudioPath
                 if (audioPath != null) {
                     val f = File(audioPath)
-                    if (f.exists() && f.length() >= 10000) {
+                    if (AudioFileVerifier.isPlausible(f, song.durationMs)) {
                         return@mapNotNull song
                     } else {
                         if (f.exists()) f.delete()
@@ -235,10 +237,16 @@ class LocalMusicRepository(private val context: Context) {
         scope.launch {
             try {
                 AppLogger.d(tag, "Starting manual download for 《${song.title}》...")
-                val directAudioUrl = resolveDownloadUrl(song)
+                val resolved = MusicApplication.instance.streamResolver.resolve(song)
+                SourceDiagnostics.logResolve(resolved, song.id, song.title, song.source)
+                val directAudioUrl = resolved.stream?.url
                 if (directAudioUrl.isNullOrEmpty() || !directAudioUrl.startsWith("http")) {
-                    val errMsg = "未能解析到有效下载直链"
-                    AppLogger.w(tag, "Could not resolve playable download URL for 《${song.title}》")
+                    val errMsg = when (resolved.failure) {
+                        FailureKind.PROMO_REJECTED -> "只找到试听/推广片段"
+                        FailureKind.NO_FREE_SOURCE -> "在可用免费音源里没有完整音频"
+                        else -> "音源暂时连不上，可重试"
+                    }
+                    AppLogger.w(tag, "Could not resolve a download stream for 《${song.title}》: $errMsg")
                     _downloadStates.update { it + (song.id to DownloadState.Failed(errMsg)) }
                     onFinished?.invoke(false, errMsg)
                     return@launch
@@ -246,7 +254,9 @@ class LocalMusicRepository(private val context: Context) {
 
                 val audioFile = File(audioDir, "${cleanFileName(song.id)}.mp3")
                 val downloadSuccess = downloadFile(directAudioUrl, audioFile)
-                if (!downloadSuccess || !audioFile.exists() || audioFile.length() < 10000) {
+                if (!downloadSuccess || !AudioFileVerifier.isPlausible(audioFile, song.durationMs) ||
+                    !AudioFileVerifier.hasPlausibleDuration(audioFile, song.durationMs)
+                ) {
                     if (audioFile.exists()) audioFile.delete()
                     val errMsg = "音频下载失败或文件损坏"
                     _downloadStates.update { it + (song.id to DownloadState.Failed(errMsg)) }
@@ -365,68 +375,11 @@ class LocalMusicRepository(private val context: Context) {
         AppLogger.i(tag, "Batch deleted ${songIds.size} downloads")
     }
 
-    private suspend fun resolveDownloadUrl(song: Song): String? {
-        val raw = song.audioUrl
-        if (raw.startsWith("youtube://")) {
-            val videoId = raw.removePrefix("youtube://")
-            try {
-                val streamUrl = MusicApplication.instance.audioSourceManager.resolveYouTubeStream(videoId)
-                if (!streamUrl.isNullOrEmpty() && streamUrl.startsWith("http")) {
-                    return streamUrl
-                }
-            } catch (e: Exception) {
-                AppLogger.w(tag, "YouTube stream resolve failed for $videoId", e)
-            }
-            return KuwoAudioHelper.getPlayableUrl(song.title, song.artist)
-        }
-
-        if (raw.startsWith("kuwo://")) {
-            val rid = raw.removePrefix("kuwo://")
-            val convertUrl = "http://antiserver.kuwo.cn/anti.s?type=convert_url&rid=$rid&format=mp3&response=url"
-            try {
-                val req = Request.Builder().url(convertUrl).build()
-                client.newCall(req).execute().use { resp ->
-                    val streamUrl = resp.body?.string()?.trim()
-                    if (!streamUrl.isNullOrEmpty() && streamUrl.startsWith("http")) {
-                        if (!KuwoAudioHelper.isKuwoPromoAudio(streamUrl)) {
-                            return streamUrl
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                AppLogger.w(tag, "Kuwo convert_url failed for $rid", e)
-            }
-            return KuwoAudioHelper.getPlayableUrl(song.title, song.artist)
-        }
-
-        if (raw.contains("music.163.com")) {
-            // First try resolving 163 outer url redirect
-            try {
-                val noRedirectClient = OkHttpClient.Builder().followRedirects(false).build()
-                val req = Request.Builder().url(raw).build()
-                noRedirectClient.newCall(req).execute().use { resp ->
-                    val loc = resp.header("Location")
-                    if (!loc.isNullOrEmpty() && !loc.contains("/404")) {
-                        return loc.replace("http://", "https://")
-                    }
-                }
-            } catch (e: Exception) {
-                AppLogger.d(tag, "Netease redirect check failed: ${e.message}")
-            }
-
-            // Fallback to Kuwo
-            val fallback = KuwoAudioHelper.getPlayableUrl(song.title, song.artist)
-            if (!fallback.isNullOrEmpty()) return fallback
-        }
-
-        return raw
-    }
-
     private fun downloadFile(url: String, destFile: File): Boolean {
         return try {
             val request = Request.Builder()
                 .url(url)
-                .header("User-Agent", YouTubeAudioSource.SAFARI_USER_AGENT)
+                .header("User-Agent", HttpPolicy.YOUTUBE_USER_AGENT)
                 .build()
 
             client.newCall(request).execute().use { response ->

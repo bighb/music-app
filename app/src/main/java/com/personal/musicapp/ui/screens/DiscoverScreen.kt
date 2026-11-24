@@ -97,8 +97,43 @@ import com.personal.musicapp.ui.theme.InkBlack
 import com.personal.musicapp.ui.theme.RosePrimary
 import com.personal.musicapp.ui.theme.RoseTint
 import com.personal.musicapp.ui.theme.SlateDark
+import com.personal.musicapp.data.source.SourceOutcome
+import com.personal.musicapp.data.source.SourceStatus
 import com.personal.musicapp.ui.theme.SlateMuted
 import com.personal.musicapp.ui.theme.YouTubeRed
+
+@Composable
+private fun SourceStatusBanner(degraded: List<SourceOutcome>, onRetry: () -> Unit) {
+    Surface(
+        shape = RoundedCornerShape(10.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.75f),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(start = 12.dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = degraded.joinToString(" · ") { "${it.source} ${sourceProblemLabel(it.status, it.httpCode)}" } + "，结果可能不全",
+                style = MaterialTheme.typography.labelMedium,
+                color = SlateMuted,
+                modifier = Modifier.weight(1f),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+            TextButton(onClick = onRetry, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
+                Text("重试", fontSize = 12.sp, color = SlateDark)
+            }
+        }
+    }
+    Spacer(modifier = Modifier.height(8.dp))
+}
+
+private fun sourceProblemLabel(status: SourceStatus, httpCode: Int): String = when (status) {
+    SourceStatus.TIMEOUT, SourceStatus.HANG -> "超时未返回"
+    SourceStatus.HTTP_ERROR -> "HTTP $httpCode"
+    else -> "未返回"
+}
 
 @Suppress("UNUSED_PARAMETER")
 @OptIn(ExperimentalLayoutApi::class)
@@ -116,6 +151,8 @@ fun DiscoverScreen(
     onClearSearchHistory: () -> Unit,
     isLoading: Boolean,
     errorMessage: String?,
+    sourceOutcomes: List<SourceOutcome> = emptyList(),
+    searchSettled: Boolean = true,
     playerState: PlayerState,
     favoritesList: List<Song>,
     playHistoryList: List<Song> = emptyList(),
@@ -430,7 +467,7 @@ fun DiscoverScreen(
                             val (badgeBg, badgeText, badgeLabel) = when (item.source.uppercase()) {
                                 "QQ" -> Triple(Color(0xFF10B981).copy(alpha = 0.15f), Color(0xFF059669), "QQ")
                                 "酷我", "KUWO" -> Triple(Color(0xFFF59E0B).copy(alpha = 0.15f), Color(0xFFD97706), "酷我")
-                                "网易", "NETEASE" -> Triple(Color(0xFFEF4444).copy(alpha = 0.15f), Color(0xFFDC2626), "网易")
+                                "网易", "NETEASE", "网易云" -> Triple(Color(0xFFEF4444).copy(alpha = 0.15f), Color(0xFFDC2626), "网易")
                                 "YOUTUBE" -> Triple(Color(0xFFEF4444).copy(alpha = 0.15f), Color(0xFFDC2626), "YT")
                                 "历史" -> Triple(MaterialTheme.colorScheme.surfaceVariant, SlateMuted, "历史")
                                 else -> Triple(RosePrimary.copy(alpha = 0.15f), RosePrimary, item.source)
@@ -538,6 +575,14 @@ fun DiscoverScreen(
 
         Spacer(modifier = Modifier.height(12.dp))
 
+        // A source that timed out must be visible: the list below is knowingly incomplete.
+        if (searchResults.isNotEmpty() && sourceOutcomes.any { it.degraded }) {
+            SourceStatusBanner(
+                degraded = sourceOutcomes.filter { it.degraded },
+                onRetry = onSearch
+            )
+        }
+
         // Content Area: Loading, Error, Results, Empty State, or Default Dashboard
         when {
             isLoading && searchResults.isEmpty() -> {
@@ -551,7 +596,11 @@ fun DiscoverScreen(
                         CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
-                            text = if (searchQuery.contains("http")) "正在解析音频链接..." else "正在全网多源匹配可用音源...",
+                            text = when {
+                                searchQuery.contains("http") -> "正在解析音频链接..."
+                                searchSettled -> "国内音源未找到，仍在尝试海外音源..."
+                                else -> "正在全网多源匹配可用音源..."
+                            },
                             style = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurfaceVariant)
                         )
                     }
